@@ -1,8 +1,0 @@
-{
-  "start_time": 3,
-  "duration": 10,
-  "seed": 3,
-  "sampling_interval": 1,
-  "request_processing_model": "ClientServer",
-  "id": 3
-}
