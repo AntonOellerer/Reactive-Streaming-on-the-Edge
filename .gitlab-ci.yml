@@ -1,0 +1,32 @@
+image: localhost/rsoc/clippy_rustfmt:latest
+stages:
+  - build
+  - check
+  - test
+
+build:
+  stage: build
+  tags:
+    - rsoe
+  script: "cargo build"
+  artifacts:
+    paths:
+      - target/debug/
+
+check-code-formatting:
+  stage: check
+  tags:
+    - rsoe
+  script: "cargo fmt --all -- --check"
+
+lint:
+  stage: check
+  tags:
+    - rsoe
+  script: "cargo clippy --all-targets --all-features -- -D warnings"
+
+test:
+  stage: test
+  tags:
+    - rsoe
+  script: "cargo test"

@@ -1,0 +1,10 @@
+{
+  "no_of_motors": 1,
+  "start_time": 1,
+  "duration": 5,
+  "request_processing_model": "ClientServer",
+  "number_of_motor_groups": 1,
+  "window_size": 3,
+  "start_port": 9000,
+  "sampling_interval": 1
+}

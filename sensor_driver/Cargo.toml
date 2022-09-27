@@ -1,0 +1,9 @@
+[package]
+name = "sensor_driver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+data_transfer_objects = { path = "../data_transfer_objects" }
+postcard = "1.0.0"
+serde = { version = "1.0", default-features = false }

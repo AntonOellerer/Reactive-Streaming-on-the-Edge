@@ -1,0 +1,9 @@
+[workspace]
+
+members = [
+	"data_transfer_objects",
+	"motor_driver",
+	"motor_monitor",
+	"sensor",
+	"sensor_driver",
+]
