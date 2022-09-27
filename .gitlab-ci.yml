@@ -11,7 +11,7 @@ build:
   script: "cargo build"
   artifacts:
     paths:
-      - target/debug/
+      - target/
 
 check-code-formatting:
   stage: check
