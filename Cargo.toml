@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+	"cloud_server",
 	"data_transfer_objects",
 	"motor_driver",
 	"motor_monitor",

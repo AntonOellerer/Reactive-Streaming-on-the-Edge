@@ -25,7 +25,7 @@ fn main() {
     for motor_id in 0..motor_driver_parameters.number_of_motor_groups as u16 {
         for sensor_id in 0..4u16 {
             let full_id: u32 = (motor_id as u32).shl(16) + sensor_id as u32;
-            let driver_port: u16 = 8000 + motor_id * 5 + sensor_id;
+            let driver_port: u16 = motor_driver_parameters.driver_port + motor_id * 5 + sensor_id;
             let sensor_port: u16 = motor_monitor_parameters.start_port + motor_id * 5 + sensor_id;
             pool.execute(move || {
                 control_sensor(full_id, driver_port, sensor_port, &motor_driver_parameters)
@@ -52,6 +52,7 @@ fn start_motor_monitor(motor_monitor_parameters: MotorMonitorParameters) {
         .arg(motor_monitor_parameters.number_of_motor_groups.to_string())
         .arg(motor_monitor_parameters.window_size.to_string())
         .arg(motor_monitor_parameters.start_port.to_string())
+        .arg(motor_monitor_parameters.cloud_server_port.to_string())
         .stderr(Stdio::inherit())
         .stdout(Stdio::inherit())
         .output()
@@ -96,6 +97,7 @@ fn create_motor_monitor_parameters(
         number_of_motor_groups: motor_driver_parameters.number_of_motor_groups,
         window_size: motor_driver_parameters.window_size,
         start_port: motor_driver_parameters.start_port,
+        cloud_server_port: motor_driver_parameters.cloud_server_port,
     }
 }
 

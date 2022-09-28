@@ -162,3 +162,5 @@ target/
 *.pdb
 
 # End of https://www.toptal.com/developers/gitignore/api/rust,linux,intellij,idea,git
+
+cloud_server/alert_protocol.csv

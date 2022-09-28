@@ -83,6 +83,7 @@ pub struct MotorMonitorParameters {
     pub number_of_motor_groups: usize,
     pub window_size: i64,
     pub start_port: u16,
+    pub cloud_server_port: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
@@ -93,5 +94,21 @@ pub struct MotorDriverParameters {
     pub window_size: i64,
     pub start_port: u16,
     pub sampling_interval: u32,
+    pub request_processing_model: RequestProcessingModel,
+    pub cloud_server_port: u16,
+    pub driver_port: u16,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Alert {
+    pub time: time_t,
+    pub motor_id: u16,
+    pub failure: MotorFailure,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CloudServerRunParameters {
+    pub start_time: time_t,
+    pub duration: u64,
     pub request_processing_model: RequestProcessingModel,
 }

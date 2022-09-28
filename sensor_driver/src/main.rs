@@ -8,9 +8,9 @@ use std::thread;
 use data_transfer_objects::SensorParameters;
 
 fn main() {
-    let port = std::env::args().nth(1).expect("no port given");
+    let driver_port = std::env::args().nth(1).expect("no port given");
     let listener =
-        TcpListener::bind(format!("localhost:{}", port)).expect("Failure binding to port");
+        TcpListener::bind(format!("localhost:{}", driver_port)).expect("Failure binding to port");
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {

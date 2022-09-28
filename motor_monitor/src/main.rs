@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
 use std::ops::{BitAnd, Index, IndexMut, Shr};
@@ -8,9 +8,13 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use data_transfer_objects::{MotorMonitorParameters, RequestProcessingModel, SensorMessage};
-use postcard::from_bytes;
+use libc::time_t;
+use postcard::{from_bytes, to_allocvec_cobs};
 use threadpool::ThreadPool;
+
+use data_transfer_objects::{
+    Alert, MotorFailure, MotorMonitorParameters, RequestProcessingModel, SensorMessage,
+};
 
 use crate::motor_sensor_group_buffers::MotorGroupSensorsBuffers;
 use crate::rules_engine::violated_rule;
@@ -50,14 +54,7 @@ impl IndexMut<usize> for MotorGroupSensorsBuffers {
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters = get_motor_monitor_parameters(&arguments);
-    let end_time = Instant::now()
-        + Duration::from_secs(
-            motor_monitor_parameters
-                .start_time
-                .try_into()
-                .expect("Could not convert time_t start time to i64 start time"),
-        )
-        + Duration::from_secs(motor_monitor_parameters.duration);
+    let end_time = calculate_end_time(&motor_monitor_parameters);
     let (tx, rx) = channel();
     let pool = ThreadPool::new(8);
     setup_receivers(&motor_monitor_parameters, tx, &pool);
@@ -65,6 +62,17 @@ fn main() {
     thread::sleep(end_time - Instant::now());
     drop(pool);
     drop(consumer_thread);
+}
+
+fn calculate_end_time(motor_monitor_parameters: &MotorMonitorParameters) -> Instant {
+    Instant::now()
+        + Duration::from_secs(
+            motor_monitor_parameters
+                .start_time
+                .try_into()
+                .expect("Could not convert time_t start time to i64 start time"),
+        )
+        + Duration::from_secs(motor_monitor_parameters.duration)
 }
 
 fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters {
@@ -100,6 +108,11 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
             .expect("Did not receive at least 7 arguments")
             .parse()
             .expect("Could not parse start_port successfully"),
+        cloud_server_port: arguments
+            .get(7)
+            .expect("Did not receive at least 8 arguments")
+            .parse()
+            .expect("Could not parse cloud_server_port successfully"),
     }
 }
 
@@ -139,6 +152,15 @@ fn setup_consumer(
     end_time: Instant,
     motor_monitor_parameters: MotorMonitorParameters,
 ) -> JoinHandle<()> {
+    let mut cloud_server = TcpStream::connect(format!(
+        "localhost:{}",
+        motor_monitor_parameters.cloud_server_port
+    ))
+    .expect("Could not open connection to cloud server");
+    eprintln!(
+        "Bound to localhost:{}",
+        motor_monitor_parameters.cloud_server_port
+    );
     thread::spawn(move || {
         let mut buffers: Vec<MotorGroupSensorsBuffers> =
             Vec::with_capacity(motor_monitor_parameters.number_of_motor_groups);
@@ -151,7 +173,7 @@ fn setup_consumer(
             let message = rx.recv();
             match message {
                 Ok(message) => {
-                    handle_message(&mut buffers, message);
+                    handle_message(&mut buffers, message, &mut cloud_server);
                 }
                 Err(e) => eprintln!("Error: {}", e),
             };
@@ -159,24 +181,57 @@ fn setup_consumer(
     })
 }
 
-fn handle_message(buffers: &mut [MotorGroupSensorsBuffers], message: SensorMessage) {
+fn handle_message(
+    buffers: &mut [MotorGroupSensorsBuffers],
+    message: SensorMessage,
+    cloud_server: &mut TcpStream,
+) {
     let motor_group_id: u32 = message.sensor_id.shr(u32::BITS / 2);
     let sensor_id = message.sensor_id.bitand(0xFFFF);
     println!(
         "Received message from {} ({} {}): {}",
         message.sensor_id, motor_group_id, sensor_id, message.reading
     );
-    let motor_group = buffers
-        .get_mut(usize::try_from(motor_group_id).expect("Could not convert u32 id to usize"))
-        .expect("Motor group id did not match to a motor group buffer");
+    let motor_group_buffers = get_motor_group_buffers(buffers, motor_group_id);
+    add_message_to_sensor_buffer(message, sensor_id, motor_group_buffers);
+    let now = util::get_now();
+    motor_group_buffers.refresh_caches(now);
+    let rule_violated = violated_rule(motor_group_buffers);
+    if let Some(rule) = rule_violated {
+        eprintln!("Found rule violation {} in motor {}", rule, motor_group_id);
+        let alert = create_alert(motor_group_id, now, rule);
+        let vec: Vec<u8> =
+            to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
+        cloud_server
+            .write_all(&vec)
+            .expect("Could not send motor alert to cloud server");
+        motor_group_buffers.reset();
+    }
+}
+
+fn add_message_to_sensor_buffer(
+    message: SensorMessage,
+    sensor_id: u32,
+    motor_group: &mut MotorGroupSensorsBuffers,
+) {
     let sensor_buffer =
         &mut motor_group[usize::try_from(sensor_id).expect("Could not convert u32 id to usize")];
     sensor_buffer.add(message);
-    let now = util::get_now();
-    motor_group.refresh_caches(now);
-    let rule_violated = violated_rule(motor_group);
-    if let Some(rule) = rule_violated {
-        println!("Found rule violation {} in motor {}", rule, motor_group_id);
-        motor_group.reset();
+}
+
+fn get_motor_group_buffers(
+    buffers: &mut [MotorGroupSensorsBuffers],
+    motor_group_id: u32,
+) -> &mut MotorGroupSensorsBuffers {
+    buffers
+        .get_mut(usize::try_from(motor_group_id).expect("Could not convert u32 id to usize"))
+        .expect("Motor group id did not match to a motor group buffer")
+}
+
+fn create_alert(motor_group_id: u32, now: time_t, rule: MotorFailure) -> Alert {
+    Alert {
+        time: now,
+        motor_id: motor_group_id as u16,
+        failure: rule,
     }
 }

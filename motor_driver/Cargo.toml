@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-postcard = { version = "1.0.0", features = ["alloc"] }
+postcard = { version = "1.0.2", features = ["alloc"] }
 serde = { version = "1.0", default-features = false }
 data_transfer_objects = { path = "../data_transfer_objects" }
 threadpool = "1.8.1"
