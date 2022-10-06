@@ -7,4 +7,6 @@ members = [
 	"motor_monitor",
 	"sensor",
 	"sensor_driver",
+	"test_driver",
+	"utils",
 ]

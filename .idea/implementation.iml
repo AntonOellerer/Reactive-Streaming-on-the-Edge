@@ -10,6 +10,7 @@
       <sourceFolder url="file://$MODULE_DIR$/sensor/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/sensor_driver/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/test_driver/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/utils/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

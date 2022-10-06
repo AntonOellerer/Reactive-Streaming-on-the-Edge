@@ -5,9 +5,10 @@ edition = "2021"
 
 [dependencies]
 data_transfer_objects = { path = "../data_transfer_objects" }
+utils = { path = "../utils" }
 postcard = "1.0.2"
 serde = { version = "1.0", default-features = false }
 libc = { version = "0.2", default-features = false }
-serde_json = "1.0.85"
+toml = "0.5.9"
 env_logger = "0.9.1"
 log = "0.4"

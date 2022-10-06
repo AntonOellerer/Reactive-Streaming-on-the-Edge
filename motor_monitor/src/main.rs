@@ -23,7 +23,6 @@ use crate::sliding_window::SlidingWindow;
 mod motor_sensor_group_buffers;
 mod rules_engine;
 mod sliding_window;
-mod util;
 
 impl Index<usize> for MotorGroupSensorsBuffers {
     type Output = SlidingWindow;
@@ -194,7 +193,7 @@ fn handle_message(
     );
     let motor_group_buffers = get_motor_group_buffers(buffers, motor_group_id);
     add_message_to_sensor_buffer(message, sensor_id, motor_group_buffers);
-    let now = util::get_now();
+    let now = utils::get_now();
     motor_group_buffers.refresh_caches(now);
     let rule_violated = violated_rule(motor_group_buffers);
     if let Some(rule) = rule_violated {

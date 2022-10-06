@@ -9,6 +9,7 @@ use data_transfer_objects::SensorParameters;
 
 fn main() {
     let driver_port = std::env::args().nth(1).expect("no port given");
+    eprintln!("Binding to {}", driver_port);
     let listener =
         TcpListener::bind(format!("localhost:{}", driver_port)).expect("Failure binding to port");
     for stream in listener.incoming() {
@@ -34,7 +35,10 @@ fn start_new_run(mut stream: TcpStream) {
         .expect("Failure reading data from TcpStream");
     let sensor_parameters: SensorParameters =
         postcard::from_bytes(&data).expect("Failure parsing data into SensorParameters");
-    println!("Running sensor");
+    println!(
+        "Running sensor {}, port {}",
+        sensor_parameters.id, sensor_parameters.motor_monitor_port
+    );
     let output = Command::new("cargo")
         .current_dir("../sensor")
         .arg("run")
@@ -49,7 +53,7 @@ fn start_new_run(mut stream: TcpStream) {
         .arg(sensor_parameters.seed.to_string())
         .arg(sensor_parameters.sampling_interval.to_string())
         .arg(sensor_parameters.request_processing_model.to_string())
-        .arg(sensor_parameters.port.to_string())
+        .arg(sensor_parameters.motor_monitor_port.to_string())
         .stderr(Stdio::inherit())
         .output()
         .expect("Failure when trying to run sensor program");

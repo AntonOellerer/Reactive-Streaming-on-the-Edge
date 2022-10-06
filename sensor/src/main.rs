@@ -2,7 +2,7 @@ use std::io::{BufRead, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::str::FromStr;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{fs, thread};
 
 use data_transfer_objects::RequestProcessingModel::ClientServer;
@@ -23,10 +23,14 @@ fn main() {
     let sensor_parameters: SensorParameters = get_sensor_parameters(&arguments);
     let mut rng = SmallRng::seed_from_u64(sensor_parameters.seed as u64);
 
-    let (start_time, end_time) = get_times(&sensor_parameters);
-    thread::sleep(start_time - Instant::now());
+    // thread::sleep(Duration::from_secs(sensor_parameters.duration));
     if sensor_parameters.request_processing_model == ClientServer {
-        execute_client_server_procedure(data_path, &sensor_parameters, &mut rng, &end_time)
+        execute_client_server_procedure(
+            data_path,
+            &sensor_parameters,
+            &mut rng,
+            sensor_parameters.start_time + sensor_parameters.duration as i64,
+        )
     }
     save_benchmark_readings();
 }
@@ -72,7 +76,7 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
                 .expect("Did not receive at least 7 arguments"),
         )
         .expect("Could not parse Request Processing Model successfully"),
-        port: arguments
+        motor_monitor_port: arguments
             .get(8)
             .expect("Did not receive at least 8 arguments")
             .parse()
@@ -80,19 +84,13 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
     }
 }
 
-fn get_times(sensor_parameters: &SensorParameters) -> (Instant, Instant) {
-    let start_time = Instant::now() + Duration::new(sensor_parameters.start_time as u64, 0);
-    let end_time = start_time + Duration::new(sensor_parameters.duration, 0);
-    (start_time, end_time)
-}
-
 fn execute_client_server_procedure(
     data_path: &Path,
     sensor_parameters: &SensorParameters,
     mut rng: &mut SmallRng,
-    end_time: &Instant,
+    end_time: time_t,
 ) {
-    while Instant::now() < *end_time {
+    while get_now() < end_time {
         let sensor_reading = fs::read(data_path)
             .expect("Failure reading sensor data")
             .lines()
@@ -110,14 +108,14 @@ fn execute_client_server_procedure(
 
 fn send_sensor_reading(sensor_parameters: &SensorParameters, sensor_reading: f32) {
     let message = SensorMessage {
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Could not get the duration since unix epoch")
-            .as_secs() as time_t,
+        timestamp: get_now(),
         reading: sensor_reading,
         sensor_id: sensor_parameters.id,
     };
-    match TcpStream::connect(format!("localhost:{}", sensor_parameters.port)) {
+    match TcpStream::connect(format!(
+        "localhost:{}",
+        sensor_parameters.motor_monitor_port
+    )) {
         Ok(mut stream) => {
             let vec: Vec<u8> =
                 to_allocvec(&message).expect("Could not write sensor reading to Vec<u8>");
@@ -148,4 +146,13 @@ fn save_benchmark_readings() {
     let _read = std::io::stdout()
         .write(&vec)
         .expect("Could not write benchmark data bytes to stdout");
+}
+
+pub fn get_now() -> time_t {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Could not get epoch seconds")
+        .as_secs()
+        .try_into()
+        .expect("Could not convert now start to time_t")
 }

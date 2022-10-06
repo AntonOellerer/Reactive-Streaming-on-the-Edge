@@ -55,7 +55,7 @@ pub struct SensorParameters {
     pub seed: u32,
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
-    pub port: u16,
+    pub motor_monitor_port: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -87,16 +87,16 @@ pub struct MotorMonitorParameters {
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
-pub struct MotorDriverParameters {
+pub struct MotorDriverRunParameters {
     pub start_time: time_t,
     pub duration: u64,
     pub number_of_motor_groups: usize,
     pub window_size: i64,
-    pub start_port: u16,
+    pub sensor_start_port: u16,
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
     pub cloud_server_port: u16,
-    pub driver_port: u16,
+    pub sensor_driver_start_port: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -110,5 +110,6 @@ pub struct Alert {
 pub struct CloudServerRunParameters {
     pub start_time: time_t,
     pub duration: u64,
+    pub motor_monitor_port: u16,
     pub request_processing_model: RequestProcessingModel,
 }

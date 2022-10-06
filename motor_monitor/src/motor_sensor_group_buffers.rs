@@ -1,4 +1,4 @@
-use crate::{util, SlidingWindow};
+use crate::SlidingWindow;
 use libc::time_t;
 
 #[derive(Debug)]
@@ -17,7 +17,7 @@ impl MotorGroupSensorsBuffers {
             process_temperature_sensor: SlidingWindow::new(window_size),
             rotational_speed_sensor: SlidingWindow::new(window_size),
             torque_sensor: SlidingWindow::new(window_size),
-            age: util::get_now(),
+            age: utils::get_now(),
         }
     }
 
@@ -33,6 +33,6 @@ impl MotorGroupSensorsBuffers {
         self.process_temperature_sensor.reset();
         self.rotational_speed_sensor.reset();
         self.torque_sensor.reset();
-        self.age = util::get_now();
+        self.age = utils::get_now();
     }
 }
