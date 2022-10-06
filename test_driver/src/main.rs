@@ -159,8 +159,7 @@ fn send_cloud_server_parameters(
 
 fn save_benchmark_results(motor_groups: u16, tcp_stream: &mut TcpStream) {
     let mut sensor_benchmark_data = open_results_file("sensor_benchmark_data_results.csv");
-    for i in 0..(motor_groups * 4) {
-        eprintln!("Iteration {}", i);
+    for _ in 0..(motor_groups * 4) {
         sensor_benchmark_data
             .write_all(
                 utils::read_object::<SensorBenchmarkData>(tcp_stream)

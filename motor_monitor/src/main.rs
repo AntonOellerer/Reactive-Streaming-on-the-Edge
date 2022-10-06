@@ -247,5 +247,4 @@ fn save_benchmark_readings() {
     let _wrote = std::io::stdout()
         .write(&vec)
         .expect("Could not write benchmark data bytes to stdout");
-    eprintln!("Wrote {}", _wrote);
 }
