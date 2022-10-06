@@ -370,6 +370,7 @@ dependencies = [
  "data_transfer_objects",
  "libc",
  "postcard",
+ "procfs",
  "threadpool",
  "utils",
 ]

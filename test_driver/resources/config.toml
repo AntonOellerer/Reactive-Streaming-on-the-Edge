@@ -1,6 +1,6 @@
 [test_run]
-start_delay = 3
-duration = 30
+start_delay = 1
+duration = 10
 
 [motor_monitor]
 window_size = 3

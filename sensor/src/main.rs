@@ -1,20 +1,21 @@
+use std::{fs, thread};
 use std::io::{BufRead, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::{fs, thread};
 
-use data_transfer_objects::RequestProcessingModel::ClientServer;
-use data_transfer_objects::{
-    RequestProcessingModel, SensorBenchmarkData, SensorMessage, SensorParameters,
-};
 use libc::time_t;
-use postcard::to_allocvec;
+use postcard::{to_allocvec, to_allocvec_cobs};
 use procfs::process::Process;
 use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
+
+use data_transfer_objects::{
+    RequestProcessingModel, SensorBenchmarkData, SensorMessage, SensorParameters,
+};
+use data_transfer_objects::RequestProcessingModel::ClientServer;
 
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
@@ -34,7 +35,7 @@ fn main() {
             sensor_parameters.start_time + sensor_parameters.duration as i64,
         )
     }
-    save_benchmark_readings();
+    save_benchmark_readings(sensor_parameters.id);
 }
 
 fn get_and_validate_path(args: &[String]) -> &Path {
@@ -131,11 +132,12 @@ fn send_sensor_reading(sensor_parameters: &SensorParameters, sensor_reading: f32
     }
 }
 
-fn save_benchmark_readings() {
+fn save_benchmark_readings(id: u32) {
     let me = Process::myself().expect("Could not get process info handle");
     let stat = me.stat().expect("Could not get /proc/[pid]/stat info");
     let status = me.status().expect("Could not get /proc/[pid]/status info");
     let benchmark_data = SensorBenchmarkData {
+        id,
         time_spent_in_kernel_mode: stat.stime,
         time_spent_in_user_mode: stat.utime,
         children_time_spent_in_kernel_mode: stat.cstime,
@@ -144,8 +146,8 @@ fn save_benchmark_readings() {
         memory_resident_set_size: status.vmrss.expect("Could not get vmrss"),
     };
     let vec: Vec<u8> =
-        to_allocvec(&benchmark_data).expect("Could not write benchmark data to Vec<u8>");
-    let _read = std::io::stdout()
+        to_allocvec_cobs(&benchmark_data).expect("Could not write benchmark data to Vec<u8>");
+    let _wrote = std::io::stdout()
         .write(&vec)
         .expect("Could not write benchmark data bytes to stdout");
 }

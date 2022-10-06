@@ -1,17 +1,18 @@
-use libc::time_t;
-use log::debug;
-use postcard::accumulator::{CobsAccumulator, FeedResult};
-use serde::Deserialize;
 use std::f64::consts::PI;
 use std::io::Read;
 use std::net::TcpStream;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub fn get_object<T>(stream: &mut TcpStream) -> Option<T>
-where
-    T: for<'de> Deserialize<'de>,
+use libc::time_t;
+use log::{debug, warn};
+use postcard::accumulator::{CobsAccumulator, FeedResult};
+use serde::Deserialize;
+
+pub fn read_object<T>(stream: &mut TcpStream) -> Option<T>
+    where
+        T: for<'de> Deserialize<'de>,
 {
-    let mut raw_buf = [0u8; 32];
+    let mut raw_buf = [0u8; 1];
     let mut cobs_buf: CobsAccumulator<256> = CobsAccumulator::new();
     let mut alert: Option<T> = None;
     debug!("Reading from stream");
@@ -40,6 +41,9 @@ where
                 FeedResult::Success { data, remaining } => {
                     debug!("Deserialized object");
                     alert = Some(data);
+                    if !remaining.is_empty() {
+                        warn!("Remaining size: {}", remaining.len());
+                    }
                     remaining
                 }
             };

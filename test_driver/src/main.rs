@@ -1,17 +1,18 @@
+use std::{fs, thread};
+use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::net::TcpStream;
 use std::str::FromStr;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{fs, thread};
 
 use clap::Parser;
 use libc::time_t;
-use log::{error, info};
+use log::info;
 use postcard::to_allocvec_cobs;
 use serde::Deserialize;
 
 use data_transfer_objects::{
-    CloudServerRunParameters, MotorDriverRunParameters, RequestProcessingModel,
+    CloudServerRunParameters, MotorDriverRunParameters, MotorMonitorBenchmarkData,
+    RequestProcessingModel, SensorBenchmarkData,
 };
 
 #[derive(Parser, Debug)]
@@ -78,19 +79,27 @@ fn main() {
     let config: Config = toml::from_str(
         &fs::read_to_string("resources/config.toml").expect("Could not read config file"),
     )
-    .expect("Could not parse config file");
-    let start_time = get_now() + config.test_run.start_delay as i64;
+        .expect("Could not parse config file");
+    let start_time = utils::get_now() + config.test_run.start_delay as i64;
+    let mut motor_driver_connection = connect_to_driver(config.motor_driver.test_driver_port);
+    let mut cloud_server_connection = connect_to_driver(config.cloud_server.test_driver_port);
     let motor_driver_parameters = create_motor_driver_parameters(&args, &config, start_time);
     let cloud_server_parameters: CloudServerRunParameters =
         create_cloud_server_parameters(&args, &config, start_time);
-    send_motor_driver_parameters(motor_driver_parameters, &config);
-    send_cloud_server_parameters(cloud_server_parameters, &config);
+    send_motor_driver_parameters(motor_driver_parameters, &mut motor_driver_connection);
+    send_cloud_server_parameters(cloud_server_parameters, &mut cloud_server_connection);
     thread::sleep(utils::get_sleep_duration(
         start_time,
         config.test_run.duration,
     ));
     info!("Done");
-    //todo read monitor and cloud server results
+    save_benchmark_results(args.motor_groups, &mut motor_driver_connection);
+    // get_alert_results();
+}
+
+fn connect_to_driver(port: u16) -> TcpStream {
+    TcpStream::connect(format!("localhost:{}", port))
+        .unwrap_or_else(|_| panic!("Could not connect to {}", port))
 }
 
 fn create_motor_driver_parameters(
@@ -113,24 +122,14 @@ fn create_motor_driver_parameters(
 
 fn send_motor_driver_parameters(
     motor_driver_parameters: MotorDriverRunParameters,
-    config: &Config,
+    tcp_stream: &mut TcpStream,
 ) {
-    match TcpStream::connect(format!(
-        "localhost:{}",
-        config.motor_driver.test_driver_port
-    )) {
-        Ok(mut stream) => {
-            let data = to_allocvec_cobs(&motor_driver_parameters)
-                .expect("Could not write motor diver parameters to bytes");
-            stream
-                .write_all(&data)
-                .expect("Could not send parameters to sensor driver");
-            info!("Sent motor server parameters")
-        }
-        Err(e) => {
-            error!("Failed to connect: {}", e);
-        }
-    }
+    let data = to_allocvec_cobs(&motor_driver_parameters)
+        .expect("Could not write motor diver parameters to bytes");
+    tcp_stream
+        .write_all(&data)
+        .expect("Could not send parameters to sensor driver");
+    info!("Sent motor server parameters")
 }
 
 fn create_cloud_server_parameters(
@@ -148,31 +147,47 @@ fn create_cloud_server_parameters(
 
 fn send_cloud_server_parameters(
     cloud_server_parameters: CloudServerRunParameters,
-    config: &Config,
+    tcp_stream: &mut TcpStream,
 ) {
-    match TcpStream::connect(format!(
-        "localhost:{}",
-        config.cloud_server.test_driver_port
-    )) {
-        Ok(mut stream) => {
-            let data = to_allocvec_cobs(&cloud_server_parameters)
-                .expect("Could not write motor diver parameters to bytes");
-            stream
-                .write_all(&data)
-                .expect("Could not send parameters to sensor driver");
-            info!("Sent cloud server parameters")
-        }
-        Err(e) => {
-            error!("Failed to connect: {}", e);
-        }
-    }
+    let data = to_allocvec_cobs(&cloud_server_parameters)
+        .expect("Could not write motor diver parameters to bytes");
+    tcp_stream
+        .write_all(&data)
+        .expect("Could not send parameters to sensor driver");
+    info!("Sent cloud server parameters")
 }
 
-pub fn get_now() -> time_t {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Could not get epoch seconds")
-        .as_secs()
-        .try_into()
-        .expect("Could not convert now start to time_t")
+fn save_benchmark_results(motor_groups: u16, tcp_stream: &mut TcpStream) {
+    let mut sensor_benchmark_data = open_results_file("sensor_benchmark_data_results.csv");
+    for i in 0..(motor_groups * 4) {
+        eprintln!("Iteration {}", i);
+        sensor_benchmark_data
+            .write_all(
+                utils::read_object::<SensorBenchmarkData>(tcp_stream)
+                    .expect("Could not read sensor benchmark data")
+                    .to_csv_string()
+                    .as_bytes(),
+            )
+            .expect("Could not write sensor benchmark data");
+    }
+    save_monitor_benchmark_result(
+        utils::read_object::<MotorMonitorBenchmarkData>(tcp_stream)
+            .expect("Could not read monitor benchmark data"),
+    );
+}
+
+fn save_monitor_benchmark_result(monitor_benchmark_data: MotorMonitorBenchmarkData) {
+    let mut motor_monitor_benchmark_results = open_results_file("motor_monitor_results.csv");
+    motor_monitor_benchmark_results
+        .write_all(monitor_benchmark_data.to_csv_string().as_bytes())
+        .expect("Could not write motor monitor benchmark data");
+}
+
+fn open_results_file(file_name: &str) -> File {
+    OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(file_name)
+        .expect("Could not open results protocol file for writing")
 }

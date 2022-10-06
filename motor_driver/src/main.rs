@@ -1,19 +1,16 @@
-use std::io::{Read, Write};
-use std::mem::size_of;
+use std::{fs, io, thread};
+use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::ops::Shl;
 use std::process::{Command, Stdio};
-use std::{fs, thread};
 
 use log::{error, info};
-use postcard::{from_bytes, to_allocvec};
+use postcard::to_allocvec;
 use serde::Deserialize;
 use threadpool::ThreadPool;
 
+use data_transfer_objects::{MotorDriverRunParameters, MotorMonitorParameters, SensorParameters};
 use data_transfer_objects::RequestProcessingModel::ClientServer;
-use data_transfer_objects::{
-    MotorDriverRunParameters, MotorMonitorParameters, SensorBenchmarkData, SensorParameters,
-};
 
 #[derive(Deserialize)]
 struct MotorDriverParameters {
@@ -25,7 +22,7 @@ fn main() {
     let motor_driver_parameters: MotorDriverParameters = toml::from_str(
         &fs::read_to_string("resources/config.toml").expect("Could not read config file"),
     )
-    .expect("Could not parse MotorDriverParameters from json config file");
+        .expect("Could not parse MotorDriverParameters from json config file");
     info!(
         "Attempting to bind to port {}",
         motor_driver_parameters.test_driver_port
@@ -34,16 +31,16 @@ fn main() {
         "localhost:{}",
         motor_driver_parameters.test_driver_port
     ))
-    .expect("Failure binding to port");
-    for control_stream in listener.incoming() {
-        match control_stream {
-            Ok(mut control_stream) => {
+        .expect("Failure binding to port");
+    for test_driver_stream in listener.incoming() {
+        match test_driver_stream {
+            Ok(mut test_driver_stream) => {
                 thread::spawn(move || {
                     info!("New run");
                     let run_parameters =
-                        utils::get_object::<MotorDriverRunParameters>(&mut control_stream)
+                        utils::read_object::<MotorDriverRunParameters>(&mut test_driver_stream)
                             .expect("Could not get run parameters");
-                    execute_new_run(run_parameters);
+                    execute_new_run(run_parameters, test_driver_stream);
                 });
             }
             Err(e) => {
@@ -54,7 +51,7 @@ fn main() {
     }
 }
 
-fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters) {
+fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_driver: TcpStream) {
     let motor_monitor_parameters = create_motor_monitor_parameters(&motor_driver_parameters);
     let no_of_sensors = motor_driver_parameters.number_of_motor_groups * 4;
     let pool = ThreadPool::new(no_of_sensors as usize);
@@ -64,18 +61,26 @@ fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters) {
             let driver_port: u16 =
                 motor_driver_parameters.sensor_driver_start_port + motor_id * 5 + sensor_id;
             let sensor_port: u16 = motor_monitor_parameters.start_port + motor_id * 5 + sensor_id;
+            let mut test_driver_stream_copy =
+                test_driver.try_clone().expect("Could not clone stream");
             pool.execute(move || {
-                control_sensor(full_id, driver_port, sensor_port, &motor_driver_parameters)
+                control_sensor(
+                    full_id,
+                    driver_port,
+                    sensor_port,
+                    &motor_driver_parameters,
+                    &mut test_driver_stream_copy,
+                );
             });
         }
     }
-    start_motor_monitor(motor_monitor_parameters);
+    handle_motor_monitor(motor_monitor_parameters, test_driver);
     pool.join();
 }
 
-fn start_motor_monitor(motor_monitor_parameters: MotorMonitorParameters) {
+fn handle_motor_monitor(motor_monitor_parameters: MotorMonitorParameters, mut stream: TcpStream) {
     println!("Running motor monitor");
-    let _output = Command::new("cargo")
+    let output = Command::new("cargo")
         .current_dir("../motor_monitor")
         .arg("run")
         .arg("--")
@@ -91,9 +96,11 @@ fn start_motor_monitor(motor_monitor_parameters: MotorMonitorParameters) {
         .arg(motor_monitor_parameters.start_port.to_string())
         .arg(motor_monitor_parameters.cloud_server_port.to_string())
         .stderr(Stdio::inherit())
-        .stdout(Stdio::inherit())
         .output()
         .expect("Failure when trying to run motor monitor program");
+    stream
+        .write_all(&output.stdout)
+        .expect("Failure writing sensor stdout to TcpStream");
 }
 
 fn control_sensor(
@@ -101,6 +108,7 @@ fn control_sensor(
     driver_port: u16,
     sensor_port: u16,
     motor_driver_parameters: &MotorDriverRunParameters,
+    test_driver_stream: &mut TcpStream,
 ) {
     info!(
         "Sending info to sensor {}, driver port {}, sensor port {}",
@@ -114,7 +122,7 @@ fn control_sensor(
                 motor_driver_parameters.start_time,
                 motor_driver_parameters.duration,
             ));
-            read_sensor_benchmark_data(&mut stream);
+            read_sensor_benchmark_data(&mut stream, test_driver_stream);
         }
         Err(e) => {
             error!("Failed to connect: {}", e);
@@ -160,12 +168,10 @@ fn write_sensor_parameters(sensor_parameters: &SensorParameters, stream: &mut Tc
         .expect("Could not write sensor parameters bytes to TcpStream");
 }
 
-fn read_sensor_benchmark_data(stream: &mut TcpStream) {
-    let mut data = [0; size_of::<SensorBenchmarkData>()];
-    let _read = stream
-        .read(&mut data)
-        .expect("Could not read benchmark data bytes from TcpStream");
-    let benchmark_data: SensorBenchmarkData =
-        from_bytes(&data).expect("Could not parse sensor benchmark data from bytes");
-    info!("{:?}", benchmark_data);
+fn read_sensor_benchmark_data(
+    sensor_driver_stream: &mut TcpStream,
+    test_driver_stream: &mut TcpStream,
+) {
+    io::copy(sensor_driver_stream, test_driver_stream)
+        .expect("Could not read/write from sensor driver to test driver");
 }
