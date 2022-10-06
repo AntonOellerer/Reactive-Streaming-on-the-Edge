@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::net::TcpStream;
 use std::str::FromStr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, thread};
 
 use clap::Parser;
@@ -85,7 +85,10 @@ fn main() {
         create_cloud_server_parameters(&args, &config, start_time);
     send_motor_driver_parameters(motor_driver_parameters, &config);
     send_cloud_server_parameters(cloud_server_parameters, &config);
-    thread::sleep(Duration::from_secs(config.test_run.duration));
+    thread::sleep(utils::get_sleep_duration(
+        start_time,
+        config.test_run.duration,
+    ));
     info!("Done");
     //todo read monitor and cloud server results
 }

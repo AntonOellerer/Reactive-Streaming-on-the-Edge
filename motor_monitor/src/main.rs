@@ -6,7 +6,6 @@ use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
 
 use libc::time_t;
 use postcard::{from_bytes, to_allocvec_cobs};
@@ -53,25 +52,17 @@ impl IndexMut<usize> for MotorGroupSensorsBuffers {
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters = get_motor_monitor_parameters(&arguments);
-    let end_time = calculate_end_time(&motor_monitor_parameters);
+    let sleep_duration = utils::get_sleep_duration(
+        motor_monitor_parameters.start_time,
+        motor_monitor_parameters.duration,
+    );
     let (tx, rx) = channel();
     let pool = ThreadPool::new(8);
     setup_receivers(&motor_monitor_parameters, tx, &pool);
-    let consumer_thread = setup_consumer(rx, end_time, motor_monitor_parameters);
-    thread::sleep(end_time - Instant::now());
+    let consumer_thread = setup_consumer(rx, motor_monitor_parameters);
+    thread::sleep(sleep_duration);
     drop(pool);
     drop(consumer_thread);
-}
-
-fn calculate_end_time(motor_monitor_parameters: &MotorMonitorParameters) -> Instant {
-    Instant::now()
-        + Duration::from_secs(
-            motor_monitor_parameters
-                .start_time
-                .try_into()
-                .expect("Could not convert time_t start time to i64 start time"),
-        )
-        + Duration::from_secs(motor_monitor_parameters.duration)
 }
 
 fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters {
@@ -148,7 +139,6 @@ fn handle_sensor_message(tx: &Sender<SensorMessage>, mut stream: TcpStream) {
 
 fn setup_consumer(
     rx: Receiver<SensorMessage>,
-    end_time: Instant,
     motor_monitor_parameters: MotorMonitorParameters,
 ) -> JoinHandle<()> {
     let mut cloud_server = TcpStream::connect(format!(
@@ -168,7 +158,9 @@ fn setup_consumer(
                 motor_monitor_parameters.window_size,
             ))
         }
-        while Instant::now() < end_time {
+        let end_time =
+            motor_monitor_parameters.start_time + motor_monitor_parameters.duration as i64;
+        while utils::get_now() < end_time {
             let message = rx.recv();
             match message {
                 Ok(message) => {
@@ -187,7 +179,7 @@ fn handle_message(
 ) {
     let motor_group_id: u32 = message.sensor_id.shr(u32::BITS / 2);
     let sensor_id = message.sensor_id.bitand(0xFFFF);
-    println!(
+    eprintln!(
         "Received message from {} ({} {}): {}",
         message.sensor_id, motor_group_id, sensor_id, message.reading
     );

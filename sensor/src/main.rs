@@ -23,7 +23,9 @@ fn main() {
     let sensor_parameters: SensorParameters = get_sensor_parameters(&arguments);
     let mut rng = SmallRng::seed_from_u64(sensor_parameters.seed as u64);
 
-    // thread::sleep(Duration::from_secs(sensor_parameters.duration));
+    thread::sleep(Duration::from_secs(
+        (sensor_parameters.start_time - get_now()) as u64,
+    ));
     if sensor_parameters.request_processing_model == ClientServer {
         execute_client_server_procedure(
             data_path,

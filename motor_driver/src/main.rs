@@ -3,7 +3,6 @@ use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
 use std::ops::Shl;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
 use std::{fs, thread};
 
 use log::{error, info};
@@ -15,7 +14,6 @@ use data_transfer_objects::RequestProcessingModel::ClientServer;
 use data_transfer_objects::{
     MotorDriverRunParameters, MotorMonitorParameters, SensorBenchmarkData, SensorParameters,
 };
-use utils::get_object;
 
 #[derive(Deserialize)]
 struct MotorDriverParameters {
@@ -43,7 +41,7 @@ fn main() {
                 thread::spawn(move || {
                     info!("New run");
                     let run_parameters =
-                        get_object::<MotorDriverRunParameters>(&mut control_stream)
+                        utils::get_object::<MotorDriverRunParameters>(&mut control_stream)
                             .expect("Could not get run parameters");
                     execute_new_run(run_parameters);
                 });
@@ -111,17 +109,11 @@ fn control_sensor(
     let sensor_parameters = create_sensor_parameters(id, sensor_port, motor_driver_parameters);
     match TcpStream::connect(format!("localhost:{}", driver_port)) {
         Ok(mut stream) => {
-            let real_start_time = Instant::now()
-                + Duration::from_secs(
-                    sensor_parameters
-                        .start_time
-                        .try_into()
-                        .expect("Could not convert time_t start time to u64"),
-                );
             write_sensor_parameters(&sensor_parameters, &mut stream);
-            thread::sleep(
-                real_start_time + Duration::from_secs(sensor_parameters.duration) - Instant::now(),
-            );
+            thread::sleep(utils::get_sleep_duration(
+                motor_driver_parameters.start_time,
+                motor_driver_parameters.duration,
+            ));
             read_sensor_benchmark_data(&mut stream);
         }
         Err(e) => {

@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::f64::consts::PI;
 use std::io::Read;
 use std::net::TcpStream;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub fn get_object<T>(stream: &mut TcpStream) -> Option<T>
 where
@@ -65,4 +65,12 @@ pub fn get_now() -> time_t {
 
 pub fn rpm_to_rad(rpm: f64) -> f64 {
     rpm / 60.0 * PI * 2.0
+}
+
+pub fn get_end_duration(start_time: time_t, duration: u64) -> u64 {
+    (start_time - get_now() + duration as i64) as u64
+}
+
+pub fn get_sleep_duration(start_time: time_t, duration: u64) -> Duration {
+    Duration::from_secs(get_end_duration(start_time, duration))
 }

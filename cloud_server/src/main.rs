@@ -2,7 +2,6 @@ use std::fs::OpenOptions;
 use std::io::Write;
 
 use std::net::TcpListener;
-use std::time::Duration;
 use std::{fs, thread};
 
 use log::{debug, error, info};
@@ -10,7 +9,6 @@ use log::{debug, error, info};
 use serde::Deserialize;
 
 use data_transfer_objects::{Alert, CloudServerRunParameters};
-use utils::get_object;
 
 #[derive(Deserialize)]
 struct CloudServerParameters {
@@ -32,12 +30,16 @@ fn main() {
         match control_stream {
             Ok(mut control_stream) => {
                 info!("New run");
-                let run_parameters = get_object::<CloudServerRunParameters>(&mut control_stream)
-                    .expect("Could not get run parameters");
+                let run_parameters =
+                    utils::get_object::<CloudServerRunParameters>(&mut control_stream)
+                        .expect("Could not get run parameters");
                 let thread_handle = thread::spawn(move || {
                     execute_new_run(run_parameters.motor_monitor_port);
                 });
-                thread::sleep(Duration::from_secs(run_parameters.duration));
+                thread::sleep(utils::get_sleep_duration(
+                    run_parameters.start_time,
+                    run_parameters.duration,
+                ));
                 drop(thread_handle);
                 //todo send file to test driver
             }
@@ -58,11 +60,11 @@ fn execute_new_run(monitor_port: u16) {
         .expect("Could not open alert protocol for writing");
     let monitor_listener = TcpListener::bind(format!("localhost:{}", monitor_port))
         .expect("Failure binding to driver port");
-    debug!("Bound to localhost:{}", monitor_port);
+    info!("Bound to localhost:{}", monitor_port);
     for alarm_stream in monitor_listener.incoming() {
         match alarm_stream {
             Ok(mut alarm_stream) => loop {
-                if let Some(alert) = get_object(&mut alarm_stream) {
+                if let Some(alert) = utils::get_object(&mut alarm_stream) {
                     info!("Received monitor message");
                     alert_protocol
                         .write_all(create_alert_csv_line(&alert).as_bytes())
