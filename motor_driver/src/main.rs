@@ -22,7 +22,7 @@ fn main() {
     let motor_driver_parameters: MotorDriverParameters = toml::from_str(
         &fs::read_to_string("resources/config.toml").expect("Could not read config file"),
     )
-        .expect("Could not parse MotorDriverParameters from json config file");
+    .expect("Could not parse MotorDriverParameters from json config file");
     info!(
         "Attempting to bind to port {}",
         motor_driver_parameters.test_driver_port
@@ -31,7 +31,7 @@ fn main() {
         "localhost:{}",
         motor_driver_parameters.test_driver_port
     ))
-        .expect("Failure binding to port");
+    .expect("Failure binding to port");
     for test_driver_stream in listener.incoming() {
         match test_driver_stream {
             Ok(mut test_driver_stream) => {

@@ -1,17 +1,18 @@
 use std::{fs, thread};
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::str;
 use std::str::FromStr;
 
 use clap::Parser;
 use libc::time_t;
-use log::info;
+use log::{debug, info};
 use postcard::to_allocvec_cobs;
 use serde::Deserialize;
 
 use data_transfer_objects::{
-    BenchmarkData, BenchmarkDataType, CloudServerRunParameters, MotorDriverRunParameters,
+    Alert, BenchmarkData, BenchmarkDataType, CloudServerRunParameters, MotorDriverRunParameters,
     RequestProcessingModel,
 };
 
@@ -79,7 +80,7 @@ fn main() {
     let config: Config = toml::from_str(
         &fs::read_to_string("resources/config.toml").expect("Could not read config file"),
     )
-        .expect("Could not parse config file");
+    .expect("Could not parse config file");
     let start_time = utils::get_now() + config.test_run.start_delay as i64;
     let mut motor_driver_connection = connect_to_driver(config.motor_driver.test_driver_port);
     let mut cloud_server_connection = connect_to_driver(config.cloud_server.test_driver_port);
@@ -94,7 +95,8 @@ fn main() {
     ));
     info!("Done");
     save_benchmark_results(args.motor_groups, &mut motor_driver_connection);
-    // get_alert_results();
+    let alerts = get_alerts(&mut cloud_server_connection);
+    info!("{:?}", alerts);
 }
 
 fn connect_to_driver(port: u16) -> TcpStream {
@@ -183,4 +185,17 @@ fn open_results_file(file_name: &str) -> File {
         .truncate(true)
         .open(file_name)
         .expect("Could not open results protocol file for writing")
+}
+
+fn get_alerts(cloud_server_stream: &mut TcpStream) -> Vec<Alert> {
+    let mut buffer = Vec::new();
+    let _ = cloud_server_stream
+        .read_to_end(&mut buffer)
+        .expect("Could not get alert file from cloud server");
+    let alerts = str::from_utf8(&buffer).expect("Could not convert u8 buffer to string");
+    debug!("{:?}", alerts);
+    alerts
+        .lines()
+        .map(|line| Alert::from_csv(String::from(line)))
+        .collect()
 }

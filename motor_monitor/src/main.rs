@@ -122,7 +122,7 @@ fn handle_consumer(
         "localhost:{}",
         motor_monitor_parameters.cloud_server_port
     ))
-        .expect("Could not open connection to cloud server");
+    .expect("Could not open connection to cloud server");
     eprintln!(
         "Connected to localhost:{}",
         motor_monitor_parameters.cloud_server_port

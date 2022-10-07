@@ -1,7 +1,7 @@
 use std::{fs, thread};
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 
 use log::{error, info};
 use serde::Deserialize;
@@ -18,17 +18,17 @@ fn main() {
     let cloud_server_parameters: CloudServerParameters = toml::from_str(
         &fs::read_to_string("resources/config.toml").expect("Could not read config file"),
     )
-        .expect("Could not parse config file");
+    .expect("Could not parse config file");
     let listener = TcpListener::bind(format!(
         "localhost:{}",
         cloud_server_parameters.test_driver_port
     ))
-        .unwrap_or_else(|_| {
-            panic!(
-                "Failure binding to driver port {}",
-                cloud_server_parameters.test_driver_port
-            )
-        });
+    .unwrap_or_else(|_| {
+        panic!(
+            "Failure binding to driver port {}",
+            cloud_server_parameters.test_driver_port
+        )
+    });
     for control_stream in listener.incoming() {
         match control_stream {
             Ok(mut control_stream) => {
@@ -45,7 +45,7 @@ fn main() {
                 ));
                 info!("Dropping handle");
                 drop(thread_handle);
-                //todo send file to test driver
+                send_alerts_to_driver(&mut control_stream);
             }
             Err(e) => {
                 error!("Error: {}", e);
@@ -53,6 +53,12 @@ fn main() {
             }
         }
     }
+}
+
+fn send_alerts_to_driver(control_stream: &mut TcpStream) {
+    let _ = control_stream
+        .write(&fs::read("alert_protocol.csv").expect("Could not get alert file bytes"))
+        .expect("Could not send alert file to test driver");
 }
 
 fn execute_new_run(monitor_port: u16) {
@@ -71,7 +77,7 @@ fn execute_new_run(monitor_port: u16) {
             while let Some(alert) = utils::read_object::<Alert>(&mut alarm_stream) {
                 info!("Received monitor message");
                 alert_protocol
-                    .write_all(alert.to_csv_string().as_bytes())
+                    .write_all(alert.to_csv().as_bytes())
                     .expect("Could not write to alert protocol");
             }
         }

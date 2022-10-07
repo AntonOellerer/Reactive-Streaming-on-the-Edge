@@ -1,4 +1,5 @@
-use std::fmt::{Display, Formatter};
+use std::fmt;
+use std::fmt::Formatter;
 use std::str::FromStr;
 
 use libc::time_t;
@@ -41,9 +42,24 @@ pub enum MotorFailure {
     RandomFailure,
 }
 
-impl Display for MotorFailure {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for MotorFailure {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl FromStr for MotorFailure {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "ToolWearFailure" => Ok(MotorFailure::ToolWearFailure),
+            "HeatDissipationFailure" => Ok(MotorFailure::HeatDissipationFailure),
+            "PowerFailure" => Ok(MotorFailure::PowerFailure),
+            "OverstrainFailure" => Ok(MotorFailure::OverstrainFailure),
+            "RandomFailure" => Ok(MotorFailure::RandomFailure),
+            _ => Err(()),
+        }
     }
 }
 
@@ -130,8 +146,17 @@ pub struct Alert {
 }
 
 impl Alert {
-    pub fn to_csv_string(&self) -> String {
+    pub fn to_csv(&self) -> String {
         format!("{},{},{}\n", self.motor_id, self.time, self.failure)
+    }
+
+    pub fn from_csv(csv_line: String) -> Alert {
+        let values: Vec<&str> = csv_line.split(',').collect();
+        Alert {
+            motor_id: u16::from_str(values[0]).expect("Could not parse motor id"),
+            time: time_t::from_str(values[1]).expect("Could not parse time"),
+            failure: MotorFailure::from_str(values[2]).expect("Could not parse MotorFailure"),
+        }
     }
 }
 
