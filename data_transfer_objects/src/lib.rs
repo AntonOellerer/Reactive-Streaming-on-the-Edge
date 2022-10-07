@@ -104,7 +104,7 @@ pub struct MotorMonitorParameters {
     pub duration: u64,
     pub request_processing_model: RequestProcessingModel,
     pub number_of_motor_groups: usize,
-    pub window_size: i64,
+    pub window_size: u32,
     pub start_port: u16,
     pub cloud_server_port: u16,
 }
@@ -114,7 +114,7 @@ pub struct MotorDriverRunParameters {
     pub start_time: time_t,
     pub duration: u64,
     pub number_of_motor_groups: usize,
-    pub window_size: i64,
+    pub window_size_seconds: u32,
     pub sensor_start_port: u16,
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
@@ -127,6 +127,12 @@ pub struct Alert {
     pub time: time_t,
     pub motor_id: u16,
     pub failure: MotorFailure,
+}
+
+impl Alert {
+    pub fn to_csv_string(&self) -> String {
+        format!("{},{},{}\n", self.motor_id, self.time, self.failure)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

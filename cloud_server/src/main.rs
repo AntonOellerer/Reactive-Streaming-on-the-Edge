@@ -43,6 +43,7 @@ fn main() {
                     run_parameters.start_time,
                     run_parameters.duration,
                 ));
+                info!("Dropping handle");
                 drop(thread_handle);
                 //todo send file to test driver
             }
@@ -64,25 +65,19 @@ fn execute_new_run(monitor_port: u16) {
     let monitor_listener = TcpListener::bind(format!("localhost:{}", monitor_port))
         .unwrap_or_else(|_| panic!("Failure binding to monitor port {}", monitor_port));
     info!("Bound to localhost:{}", monitor_port);
-    for alarm_stream in monitor_listener.incoming() {
-        match alarm_stream {
-            Ok(mut alarm_stream) => loop {
-                info!("Looping");
-                if let Some(alert) = utils::read_object::<Alert>(&mut alarm_stream) {
-                    info!("Received monitor message");
-                    alert_protocol
-                        .write_all(create_alert_csv_line(&alert).as_bytes())
-                        .expect("Could not write to alert protocol");
-                }
-            },
-            Err(e) => {
-                error!("Error: {}", e);
-                /* connection failed */
+    let alarm_stream = monitor_listener.accept();
+    match alarm_stream {
+        Ok((mut alarm_stream, _)) => {
+            while let Some(alert) = utils::read_object::<Alert>(&mut alarm_stream) {
+                info!("Received monitor message");
+                alert_protocol
+                    .write_all(alert.to_csv_string().as_bytes())
+                    .expect("Could not write to alert protocol");
             }
         }
+        Err(e) => {
+            error!("Error: {}", e);
+            /* connection failed */
+        }
     }
-}
-
-fn create_alert_csv_line(alert: &Alert) -> String {
-    format!("{},{},{}\n", alert.time, alert.failure, alert.motor_id,)
 }
