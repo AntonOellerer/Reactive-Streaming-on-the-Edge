@@ -1,9 +1,9 @@
 [test_run]
 start_delay = 1
-duration = 10
+duration = 30
 
 [motor_monitor]
-window_size = 3
+window_size_seconds = 3
 sensors_start_port = 9000
 
 [motor_driver]

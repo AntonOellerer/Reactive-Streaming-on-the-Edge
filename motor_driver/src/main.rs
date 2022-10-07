@@ -141,7 +141,8 @@ fn create_motor_monitor_parameters(
         duration: motor_driver_parameters.duration,
         request_processing_model: motor_driver_parameters.request_processing_model,
         number_of_motor_groups: motor_driver_parameters.number_of_motor_groups,
-        window_size: motor_driver_parameters.window_size,
+        window_size: motor_driver_parameters.window_size_seconds * 1000
+            / motor_driver_parameters.sampling_interval,
         start_port: motor_driver_parameters.sensor_start_port,
         cloud_server_port: motor_driver_parameters.cloud_server_port,
     }

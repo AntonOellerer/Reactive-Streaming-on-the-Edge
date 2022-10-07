@@ -1,5 +1,8 @@
-use crate::SlidingWindow;
+use std::ops::{Index, IndexMut};
+
 use libc::time_t;
+
+use crate::SlidingWindow;
 
 #[derive(Debug)]
 pub struct MotorGroupSensorsBuffers {
@@ -11,7 +14,7 @@ pub struct MotorGroupSensorsBuffers {
 }
 
 impl MotorGroupSensorsBuffers {
-    pub fn new(window_size: i64) -> MotorGroupSensorsBuffers {
+    pub fn new(window_size: u32) -> MotorGroupSensorsBuffers {
         MotorGroupSensorsBuffers {
             air_temperature_sensor: SlidingWindow::new(window_size),
             process_temperature_sensor: SlidingWindow::new(window_size),
@@ -34,5 +37,31 @@ impl MotorGroupSensorsBuffers {
         self.rotational_speed_sensor.reset();
         self.torque_sensor.reset();
         self.age = utils::get_now();
+    }
+}
+
+impl Index<usize> for MotorGroupSensorsBuffers {
+    type Output = SlidingWindow;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match index {
+            0 => &self.air_temperature_sensor,
+            1 => &self.process_temperature_sensor,
+            2 => &self.rotational_speed_sensor,
+            3 => &self.torque_sensor,
+            _ => panic!("Invalid MotorGroupSensorsBuffers index"),
+        }
+    }
+}
+
+impl IndexMut<usize> for MotorGroupSensorsBuffers {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        match index {
+            0 => &mut self.air_temperature_sensor,
+            1 => &mut self.process_temperature_sensor,
+            2 => &mut self.rotational_speed_sensor,
+            3 => &mut self.torque_sensor,
+            _ => panic!("Invalid MotorGroupSensorsBuffers index"),
+        }
     }
 }

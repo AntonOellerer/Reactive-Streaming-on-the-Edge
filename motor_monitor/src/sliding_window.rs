@@ -1,14 +1,15 @@
-use data_transfer_objects::SensorMessage;
 use libc::time_t;
+
+use data_transfer_objects::SensorMessage;
 
 #[derive(Debug)]
 pub struct SlidingWindow {
-    window_size: i64,
+    window_size: u32,
     elements: Vec<SensorMessage>,
 }
 
 impl SlidingWindow {
-    pub fn new(window_size: i64) -> SlidingWindow {
+    pub fn new(window_size: u32) -> SlidingWindow {
         SlidingWindow {
             window_size,
             elements: Vec::new(),
@@ -30,7 +31,7 @@ impl SlidingWindow {
 
     pub fn refresh_cache(&mut self, at_time: time_t) {
         self.elements
-            .retain(|message| message.timestamp > at_time - self.window_size);
+            .retain(|message| message.timestamp > at_time - self.window_size as i64);
     }
 
     pub fn reset(&mut self) {

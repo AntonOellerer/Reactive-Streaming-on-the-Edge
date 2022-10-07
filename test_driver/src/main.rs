@@ -47,7 +47,7 @@ struct TestRunConfig {
 
 #[derive(Deserialize)]
 struct MotorMonitorConfig {
-    window_size: i64,
+    window_size_seconds: u32,
     sensors_start_port: u16,
 }
 
@@ -111,7 +111,7 @@ fn create_motor_driver_parameters(
         start_time,
         duration: config.test_run.duration,
         number_of_motor_groups: args.motor_groups as usize,
-        window_size: config.motor_monitor.window_size,
+        window_size_seconds: config.motor_monitor.window_size_seconds,
         sensor_start_port: config.motor_monitor.sensors_start_port,
         sampling_interval: args.sampling_interval,
         request_processing_model: RequestProcessingModel::ReactiveStreaming,

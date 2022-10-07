@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
-use std::ops::{BitAnd, Index, IndexMut, Shr};
+use std::ops::{BitAnd, Shr};
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
@@ -24,32 +24,6 @@ use crate::sliding_window::SlidingWindow;
 mod motor_sensor_group_buffers;
 mod rules_engine;
 mod sliding_window;
-
-impl Index<usize> for MotorGroupSensorsBuffers {
-    type Output = SlidingWindow;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        match index {
-            0 => &self.air_temperature_sensor,
-            1 => &self.process_temperature_sensor,
-            2 => &self.rotational_speed_sensor,
-            3 => &self.torque_sensor,
-            _ => panic!("Invalid MotorGroupSensorsBuffers index"),
-        }
-    }
-}
-
-impl IndexMut<usize> for MotorGroupSensorsBuffers {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        match index {
-            0 => &mut self.air_temperature_sensor,
-            1 => &mut self.process_temperature_sensor,
-            2 => &mut self.rotational_speed_sensor,
-            3 => &mut self.torque_sensor,
-            _ => panic!("Invalid MotorGroupSensorsBuffers index"),
-        }
-    }
-}
 
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();

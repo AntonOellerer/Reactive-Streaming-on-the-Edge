@@ -9,8 +9,8 @@ use postcard::accumulator::{CobsAccumulator, FeedResult};
 use serde::Deserialize;
 
 pub fn read_object<T>(stream: &mut TcpStream) -> Option<T>
-    where
-        T: for<'de> Deserialize<'de>,
+where
+    T: for<'de> Deserialize<'de>,
 {
     let mut raw_buf = [0u8; 1];
     let mut cobs_buf: CobsAccumulator<256> = CobsAccumulator::new();
