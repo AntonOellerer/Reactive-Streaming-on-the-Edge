@@ -1,9 +1,9 @@
-use std::{fs, thread};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::str;
 use std::str::FromStr;
+use std::{fs, thread};
 
 use clap::Parser;
 use libc::time_t;

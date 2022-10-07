@@ -1,9 +1,9 @@
-use std::{fs, thread};
 use std::io::{BufRead, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{fs, thread};
 
 use libc::time_t;
 use postcard::{to_allocvec, to_allocvec_cobs};
@@ -12,10 +12,10 @@ use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
+use data_transfer_objects::RequestProcessingModel::ClientServer;
 use data_transfer_objects::{
     BenchmarkData, BenchmarkDataType, RequestProcessingModel, SensorMessage, SensorParameters,
 };
-use data_transfer_objects::RequestProcessingModel::ClientServer;
 
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();

@@ -1,16 +1,16 @@
-use std::{fs, io, thread};
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::ops::Shl;
 use std::process::{Command, Stdio};
+use std::{fs, io, thread};
 
 use log::{error, info};
 use postcard::to_allocvec;
 use serde::Deserialize;
 use threadpool::ThreadPool;
 
-use data_transfer_objects::{MotorDriverRunParameters, MotorMonitorParameters, SensorParameters};
 use data_transfer_objects::RequestProcessingModel::ClientServer;
+use data_transfer_objects::{MotorDriverRunParameters, MotorMonitorParameters, SensorParameters};
 
 #[derive(Deserialize)]
 struct MotorDriverParameters {

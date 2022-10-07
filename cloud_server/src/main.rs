@@ -1,7 +1,7 @@
-use std::{fs, thread};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
+use std::{fs, thread};
 
 use log::{error, info};
 use serde::Deserialize;
