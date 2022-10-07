@@ -96,11 +96,13 @@ fn handle_motor_monitor(motor_monitor_parameters: MotorMonitorParameters, mut st
         .arg(motor_monitor_parameters.start_port.to_string())
         .arg(motor_monitor_parameters.cloud_server_port.to_string())
         .stderr(Stdio::inherit())
+        // .stdout(Stdio::inherit())
         .output()
         .expect("Failure when trying to run motor monitor program");
     stream
         .write_all(&output.stdout)
         .expect("Failure writing sensor stdout to TcpStream");
+    eprintln!("Copied stream");
 }
 
 fn control_sensor(
@@ -116,13 +118,14 @@ fn control_sensor(
     );
     let sensor_parameters = create_sensor_parameters(id, sensor_port, motor_driver_parameters);
     match TcpStream::connect(format!("localhost:{}", driver_port)) {
-        Ok(mut stream) => {
-            write_sensor_parameters(&sensor_parameters, &mut stream);
+        Ok(mut sensor_stream) => {
+            write_sensor_parameters(&sensor_parameters, &mut sensor_stream);
             thread::sleep(utils::get_sleep_duration(
                 motor_driver_parameters.start_time,
                 motor_driver_parameters.duration,
             ));
-            read_sensor_benchmark_data(&mut stream, test_driver_stream);
+            info!("Copying data {}", id);
+            copy_sensor_benchmark_data(&mut sensor_stream, test_driver_stream);
         }
         Err(e) => {
             error!("Failed to connect: {}", e);
@@ -168,7 +171,7 @@ fn write_sensor_parameters(sensor_parameters: &SensorParameters, stream: &mut Tc
         .expect("Could not write sensor parameters bytes to TcpStream");
 }
 
-fn read_sensor_benchmark_data(
+fn copy_sensor_benchmark_data(
     sensor_driver_stream: &mut TcpStream,
     test_driver_stream: &mut TcpStream,
 ) {

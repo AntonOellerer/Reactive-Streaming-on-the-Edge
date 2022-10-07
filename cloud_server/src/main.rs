@@ -67,7 +67,8 @@ fn execute_new_run(monitor_port: u16) {
     for alarm_stream in monitor_listener.incoming() {
         match alarm_stream {
             Ok(mut alarm_stream) => loop {
-                if let Some(alert) = utils::read_object(&mut alarm_stream) {
+                info!("Looping");
+                if let Some(alert) = utils::read_object::<Alert>(&mut alarm_stream) {
                     info!("Received monitor message");
                     alert_protocol
                         .write_all(create_alert_csv_line(&alert).as_bytes())

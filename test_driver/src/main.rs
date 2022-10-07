@@ -11,8 +11,8 @@ use postcard::to_allocvec_cobs;
 use serde::Deserialize;
 
 use data_transfer_objects::{
-    CloudServerRunParameters, MotorDriverRunParameters, MotorMonitorBenchmarkData,
-    RequestProcessingModel, SensorBenchmarkData,
+    BenchmarkData, BenchmarkDataType, CloudServerRunParameters, MotorDriverRunParameters,
+    RequestProcessingModel,
 };
 
 #[derive(Parser, Debug)]
@@ -158,28 +158,22 @@ fn send_cloud_server_parameters(
 }
 
 fn save_benchmark_results(motor_groups: u16, tcp_stream: &mut TcpStream) {
+    let mut motor_monitor_benchmark_data = open_results_file("motor_monitor_results.csv");
     let mut sensor_benchmark_data = open_results_file("sensor_benchmark_data_results.csv");
-    for _ in 0..(motor_groups * 4) {
-        sensor_benchmark_data
-            .write_all(
-                utils::read_object::<SensorBenchmarkData>(tcp_stream)
-                    .expect("Could not read sensor benchmark data")
-                    .to_csv_string()
-                    .as_bytes(),
-            )
-            .expect("Could not write sensor benchmark data");
+    for _ in 0..(motor_groups * 4 + 1) {
+        let benchmark_data = utils::read_object::<BenchmarkData>(tcp_stream)
+            .expect("Could not read sensor benchmark data");
+        if benchmark_data.benchmark_data_type == BenchmarkDataType::Sensor {
+            sensor_benchmark_data
+                .write_all(benchmark_data.to_csv_string().as_bytes())
+                .expect("Could not write sensor benchmark data");
+        } else {
+            motor_monitor_benchmark_data
+                .write_all(benchmark_data.to_csv_string().as_bytes())
+                .expect("Could not write motor monitor benchmark data");
+        }
     }
-    save_monitor_benchmark_result(
-        utils::read_object::<MotorMonitorBenchmarkData>(tcp_stream)
-            .expect("Could not read monitor benchmark data"),
-    );
-}
-
-fn save_monitor_benchmark_result(monitor_benchmark_data: MotorMonitorBenchmarkData) {
-    let mut motor_monitor_benchmark_results = open_results_file("motor_monitor_results.csv");
-    motor_monitor_benchmark_results
-        .write_all(monitor_benchmark_data.to_csv_string().as_bytes())
-        .expect("Could not write motor monitor benchmark data");
+    info!("Read benchmark data");
 }
 
 fn open_results_file(file_name: &str) -> File {

@@ -13,8 +13,8 @@ use procfs::process::Process;
 use threadpool::ThreadPool;
 
 use data_transfer_objects::{
-    Alert, MotorFailure, MotorMonitorBenchmarkData, MotorMonitorParameters, RequestProcessingModel,
-    SensorMessage,
+    Alert, BenchmarkData, BenchmarkDataType, MotorFailure, MotorMonitorParameters,
+    RequestProcessingModel, SensorMessage,
 };
 
 use crate::motor_sensor_group_buffers::MotorGroupSensorsBuffers;
@@ -234,17 +234,20 @@ fn save_benchmark_readings() {
     let me = Process::myself().expect("Could not get process info handle");
     let stat = me.stat().expect("Could not get /proc/[pid]/stat info");
     let status = me.status().expect("Could not get /proc/[pid]/status info");
-    let benchmark_data = MotorMonitorBenchmarkData {
+    let benchmark_data = BenchmarkData {
+        id: 0,
         time_spent_in_kernel_mode: stat.stime,
         time_spent_in_user_mode: stat.utime,
         children_time_spent_in_kernel_mode: stat.cstime,
         children_time_spent_in_user_mode: stat.cutime,
         memory_high_water_mark: status.vmhwm.expect("Could not get vmhw"),
         memory_resident_set_size: status.vmrss.expect("Could not get vmrss"),
+        benchmark_data_type: BenchmarkDataType::MotorMonitor,
     };
     let vec: Vec<u8> =
         to_allocvec_cobs(&benchmark_data).expect("Could not write benchmark data to Vec<u8>");
     let _wrote = std::io::stdout()
         .write(&vec)
         .expect("Could not write benchmark data bytes to stdout");
+    eprintln!("Wrote {}", _wrote);
 }

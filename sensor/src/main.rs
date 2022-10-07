@@ -13,7 +13,7 @@ use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
 use data_transfer_objects::{
-    RequestProcessingModel, SensorBenchmarkData, SensorMessage, SensorParameters,
+    BenchmarkData, BenchmarkDataType, RequestProcessingModel, SensorMessage, SensorParameters,
 };
 use data_transfer_objects::RequestProcessingModel::ClientServer;
 
@@ -136,7 +136,7 @@ fn save_benchmark_readings(id: u32) {
     let me = Process::myself().expect("Could not get process info handle");
     let stat = me.stat().expect("Could not get /proc/[pid]/stat info");
     let status = me.status().expect("Could not get /proc/[pid]/status info");
-    let benchmark_data = SensorBenchmarkData {
+    let benchmark_data = BenchmarkData {
         id,
         time_spent_in_kernel_mode: stat.stime,
         time_spent_in_user_mode: stat.utime,
@@ -144,6 +144,7 @@ fn save_benchmark_readings(id: u32) {
         children_time_spent_in_user_mode: stat.cutime,
         memory_high_water_mark: status.vmhwm.expect("Could not get vmhw"),
         memory_resident_set_size: status.vmrss.expect("Could not get vmrss"),
+        benchmark_data_type: BenchmarkDataType::Sensor,
     };
     let vec: Vec<u8> =
         to_allocvec_cobs(&benchmark_data).expect("Could not write benchmark data to Vec<u8>");

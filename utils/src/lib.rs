@@ -4,7 +4,7 @@ use std::net::TcpStream;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use libc::time_t;
-use log::{debug, warn};
+use log::{debug, error, info, warn};
 use postcard::accumulator::{CobsAccumulator, FeedResult};
 use serde::Deserialize;
 
@@ -31,11 +31,11 @@ pub fn read_object<T>(stream: &mut TcpStream) -> Option<T>
                     break;
                 }
                 FeedResult::OverFull(new_wind) => {
-                    debug!("Overfull");
+                    error!("Overfull");
                     new_wind
                 }
                 FeedResult::DeserError(new_wind) => {
-                    debug!("Deserialization error");
+                    error!("Deserialization error");
                     new_wind
                 }
                 FeedResult::Success { data, remaining } => {
@@ -54,7 +54,7 @@ pub fn read_object<T>(stream: &mut TcpStream) -> Option<T>
             return alert;
         }
     }
-    debug!("Read");
+    info!("Read");
     alert
 }
 

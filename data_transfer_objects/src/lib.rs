@@ -59,7 +59,7 @@ pub struct SensorParameters {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct SensorBenchmarkData {
+pub struct BenchmarkData {
     pub id: u32,
     pub time_spent_in_user_mode: u64,
     pub time_spent_in_kernel_mode: u64,
@@ -67,37 +67,20 @@ pub struct SensorBenchmarkData {
     pub children_time_spent_in_kernel_mode: i64,
     pub memory_high_water_mark: u64,
     pub memory_resident_set_size: u64,
+    pub benchmark_data_type: BenchmarkDataType,
 }
 
-impl SensorBenchmarkData {
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+pub enum BenchmarkDataType {
+    Sensor,
+    MotorMonitor,
+}
+
+impl BenchmarkData {
     pub fn to_csv_string(&self) -> String {
         format!(
             "{},{},{},{},{},{},{}\n",
             self.id,
-            self.time_spent_in_user_mode,
-            self.time_spent_in_kernel_mode,
-            self.children_time_spent_in_user_mode,
-            self.children_time_spent_in_kernel_mode,
-            self.memory_high_water_mark,
-            self.memory_resident_set_size
-        )
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct MotorMonitorBenchmarkData {
-    pub time_spent_in_user_mode: u64,
-    pub time_spent_in_kernel_mode: u64,
-    pub children_time_spent_in_user_mode: i64,
-    pub children_time_spent_in_kernel_mode: i64,
-    pub memory_high_water_mark: u64,
-    pub memory_resident_set_size: u64,
-}
-
-impl MotorMonitorBenchmarkData {
-    pub fn to_csv_string(&self) -> String {
-        format!(
-            "{},{},{},{},{},{}\n",
             self.time_spent_in_user_mode,
             self.time_spent_in_kernel_mode,
             self.children_time_spent_in_user_mode,
