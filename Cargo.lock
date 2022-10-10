@@ -703,6 +703,7 @@ dependencies = [
  "libc",
  "log",
  "postcard",
+ "rand",
  "serde",
  "toml",
  "utils",

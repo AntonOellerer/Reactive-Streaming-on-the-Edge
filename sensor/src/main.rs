@@ -22,7 +22,7 @@ fn main() {
     let data_path = get_and_validate_path(&arguments);
 
     let sensor_parameters: SensorParameters = get_sensor_parameters(&arguments);
-    let mut rng = SmallRng::seed_from_u64(sensor_parameters.seed as u64);
+    let mut rng = SmallRng::seed_from_u64(sensor_parameters.id as u64);
 
     thread::sleep(Duration::from_secs(
         (sensor_parameters.start_time - get_now()) as u64,
@@ -63,25 +63,20 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
             .expect("Did not receive at least 4 arguments")
             .parse()
             .expect("Could not parse duration successfully"),
-        seed: arguments
+        sampling_interval: arguments
             .get(5)
             .expect("Did not receive at least 5 arguments")
-            .parse()
-            .expect("Could not parse seed successfully"),
-        sampling_interval: arguments
-            .get(6)
-            .expect("Did not receive at least 6 arguments")
             .parse()
             .expect("Could not parse sampling interval successfully"),
         request_processing_model: RequestProcessingModel::from_str(
             arguments
-                .get(7)
-                .expect("Did not receive at least 7 arguments"),
+                .get(6)
+                .expect("Did not receive at least 6 arguments"),
         )
         .expect("Could not parse Request Processing Model successfully"),
         motor_monitor_port: arguments
-            .get(8)
-            .expect("Did not receive at least 8 arguments")
+            .get(7)
+            .expect("Did not receive at least 7 arguments")
             .parse()
             .expect("Could not parse port successfully"),
     }

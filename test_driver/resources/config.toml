@@ -1,6 +1,6 @@
 [test_run]
 start_delay = 1
-duration = 30
+duration = 120
 
 [motor_monitor]
 window_size_seconds = 3
@@ -13,3 +13,6 @@ sensor_driver_port = 11000
 [cloud_server]
 test_driver_port = 8001
 motor_monitor_port = 10000
+
+[validator]
+validation_window = 3

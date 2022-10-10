@@ -102,7 +102,6 @@ fn handle_motor_monitor(motor_monitor_parameters: MotorMonitorParameters, mut st
     stream
         .write_all(&output.stdout)
         .expect("Failure writing sensor stdout to TcpStream");
-    eprintln!("Copied stream");
 }
 
 fn control_sensor(
@@ -157,7 +156,6 @@ fn create_sensor_parameters(
         id,
         start_time: motor_driver_parameters.start_time,
         duration: motor_driver_parameters.duration,
-        seed: id,
         sampling_interval: motor_driver_parameters.sampling_interval,
         request_processing_model: ClientServer,
         motor_monitor_port: port,

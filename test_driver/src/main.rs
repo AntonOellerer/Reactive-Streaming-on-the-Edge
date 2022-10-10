@@ -1,3 +1,5 @@
+mod validator;
+
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -38,6 +40,7 @@ struct Config {
     motor_monitor: MotorMonitorConfig,
     motor_driver: MotorDriverConfig,
     cloud_server: CloudServerConfig,
+    validator: ValidatorConfig,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +65,11 @@ struct MotorDriverConfig {
 struct CloudServerConfig {
     motor_monitor_port: u16,
     test_driver_port: u16,
+}
+
+#[derive(Deserialize)]
+struct ValidatorConfig {
+    validation_window: u32,
 }
 
 fn parse_request_processing_model(s: &str) -> Result<RequestProcessingModel, String> {
@@ -93,10 +101,9 @@ fn main() {
         start_time,
         config.test_run.duration,
     ));
-    info!("Done");
     save_benchmark_results(args.motor_groups, &mut motor_driver_connection);
     let alerts = get_alerts(&mut cloud_server_connection);
-    info!("{:?}", alerts);
+    validator::validate_alerts(&config, &args, start_time, &alerts);
 }
 
 fn connect_to_driver(port: u16) -> TcpStream {

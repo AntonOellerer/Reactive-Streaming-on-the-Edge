@@ -1,11 +1,12 @@
 use std::io::{Read, Write};
 use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
-use std::ops::{BitAnd, Shr};
+use std::ops::{Add, BitAnd, Shr};
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use libc::time_t;
 use postcard::{from_bytes, to_allocvec_cobs};
@@ -18,7 +19,6 @@ use data_transfer_objects::{
 };
 
 use crate::motor_sensor_group_buffers::MotorGroupSensorsBuffers;
-use crate::rules_engine::violated_rule;
 use crate::sliding_window::SlidingWindow;
 
 mod motor_sensor_group_buffers;
@@ -31,7 +31,8 @@ fn main() {
     let sleep_duration = utils::get_sleep_duration(
         motor_monitor_parameters.start_time,
         motor_monitor_parameters.duration,
-    );
+    )
+    .add(Duration::from_secs(1)); //to account for all sensor messages
     let (tx, rx) = channel();
     let pool = ThreadPool::new(8);
     handle_receivers(&motor_monitor_parameters, tx, &pool);
@@ -156,15 +157,17 @@ fn handle_message(
 ) {
     let motor_group_id: u32 = message.sensor_id.shr(u32::BITS / 2);
     let sensor_id = message.sensor_id.bitand(0xFFFF);
-    eprintln!(
-        "Received message from {} ({} {}): {}",
-        message.sensor_id, motor_group_id, sensor_id, message.reading
-    );
+    // if sensor_id == 0 {
+    //     eprintln!(
+    //         "Received message from {} ({} {}): {}",
+    //         message.sensor_id, motor_group_id, sensor_id, message.reading
+    //     );
+    // }
     let motor_group_buffers = get_motor_group_buffers(buffers, motor_group_id);
     add_message_to_sensor_buffer(message, sensor_id, motor_group_buffers);
     let now = utils::get_now();
     motor_group_buffers.refresh_caches(now);
-    let rule_violated = violated_rule(motor_group_buffers);
+    let rule_violated = rules_engine::violated_rule(motor_group_buffers);
     if let Some(rule) = rule_violated {
         eprintln!("Found rule violation {} in motor {}", rule, motor_group_id);
         let alert = create_alert(motor_group_id, now, rule);
@@ -220,8 +223,7 @@ fn save_benchmark_readings() {
     };
     let vec: Vec<u8> =
         to_allocvec_cobs(&benchmark_data).expect("Could not write benchmark data to Vec<u8>");
-    let _wrote = std::io::stdout()
+    let _ = std::io::stdout()
         .write(&vec)
         .expect("Could not write benchmark data bytes to stdout");
-    eprintln!("Wrote {}", _wrote);
 }

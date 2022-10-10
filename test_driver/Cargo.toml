@@ -15,3 +15,4 @@ toml = "0.5.9"
 libc = { version = "0.2", default-features = false }
 env_logger = "0.9.1"
 log = "0.4"
+rand = { version = "0.8.5", features = ["small_rng"] }

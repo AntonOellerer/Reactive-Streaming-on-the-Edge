@@ -33,7 +33,7 @@ impl ToString for RequestProcessingModel {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub enum MotorFailure {
     ToolWearFailure,
     HeatDissipationFailure,
@@ -68,7 +68,6 @@ pub struct SensorParameters {
     pub id: u32,
     pub start_time: time_t,
     pub duration: u64,
-    pub seed: u32,
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
     pub motor_monitor_port: u16,
