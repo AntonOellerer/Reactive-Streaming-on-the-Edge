@@ -26,10 +26,10 @@ pub fn violated_rule(motor_group_buffers: &MotorGroupSensorsBuffers) -> Option<M
     let age = utils::get_now() - motor_group_buffers.age;
     if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
         Some(MotorFailure::HeatDissipationFailure)
-    } else if torque * rotational_speed_in_rad > 9000.0 || torque * rotational_speed_in_rad < 3500.0
+    } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
     {
         Some(MotorFailure::PowerFailure)
-    } else if age * torque.round() as i64 > 10000 {
+    } else if age * torque.round() as i64 > 11_000 {
         Some(MotorFailure::OverstrainFailure)
     } else {
         None

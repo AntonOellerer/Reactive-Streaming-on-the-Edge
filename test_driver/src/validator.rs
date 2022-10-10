@@ -52,9 +52,9 @@ pub(crate) fn validate_alerts(config: &Config, args: &Args, start_time: time_t, 
 }
 
 fn alert_equals(validation_window: i64, expected_alert: &Alert, alert: &Alert) -> bool {
-    (expected_alert.time - alert.time).abs() <= validation_window as i64
+    expected_alert.failure == alert.failure
         && expected_alert.motor_id == alert.motor_id
-        && expected_alert.failure == alert.failure
+        && (expected_alert.time - alert.time).abs() <= validation_window as i64
 }
 
 pub(crate) fn get_expected_alerts(config: &Config, args: &Args, start_time: time_t) -> Vec<Alert> {
@@ -65,16 +65,16 @@ pub(crate) fn get_expected_alerts(config: &Config, args: &Args, start_time: time
         for j in 0..4 {
             let seed: u32 = (i as u32).shl(16) + j as u32;
             let mut rng = SmallRng::seed_from_u64(seed as u64);
-            let mut time = start_time;
-            while time < start_time + config.test_run.duration as i64 {
+            let mut time = start_time as f64;
+            while time < start_time as f64 + config.test_run.duration as f64 {
                 let sensor_reading = get_sensor_reading(&mut rng, j);
-                buffer[j as usize].push((time, sensor_reading));
-                time += args.sampling_interval as i64 / 1000;
+                buffer[j as usize].push((time as i64, sensor_reading));
+                time += args.sampling_interval as f64 / 1000.0;
             }
         }
         alerts.append(&mut get_motor_alerts(i, buffer, window_size));
     }
-    alerts.sort_by(|a, b| a.time.cmp(&b.time));
+    alerts.sort_by_key(|alert| alert.time);
     alerts
 }
 
