@@ -24,15 +24,12 @@ fn main() {
     let sensor_parameters: SensorParameters = get_sensor_parameters(&arguments);
     let mut rng = SmallRng::seed_from_u64(sensor_parameters.id as u64);
 
-    thread::sleep(Duration::from_secs(
-        (sensor_parameters.start_time - get_now()) as u64,
-    ));
     if sensor_parameters.request_processing_model == ClientServer {
         execute_client_server_procedure(
             data_path,
             &sensor_parameters,
             &mut rng,
-            sensor_parameters.start_time + sensor_parameters.duration as i64,
+            Duration::from_secs(sensor_parameters.duration as u64),
         )
     }
     save_benchmark_readings(sensor_parameters.id);
@@ -53,29 +50,24 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
             .expect("Did not receive at least 2 arguments")
             .parse()
             .expect("Could not parse id successfully"),
-        start_time: arguments
-            .get(3)
-            .expect("Did not receive at least 3 arguments")
-            .parse()
-            .expect("Could not parse start time successfully"),
         duration: arguments
-            .get(4)
+            .get(3)
             .expect("Did not receive at least 4 arguments")
             .parse()
             .expect("Could not parse duration successfully"),
         sampling_interval: arguments
-            .get(5)
+            .get(4)
             .expect("Did not receive at least 5 arguments")
             .parse()
             .expect("Could not parse sampling interval successfully"),
         request_processing_model: RequestProcessingModel::from_str(
             arguments
-                .get(6)
+                .get(5)
                 .expect("Did not receive at least 6 arguments"),
         )
         .expect("Could not parse Request Processing Model successfully"),
         motor_monitor_port: arguments
-            .get(7)
+            .get(6)
             .expect("Did not receive at least 7 arguments")
             .parse()
             .expect("Could not parse port successfully"),
@@ -86,8 +78,9 @@ fn execute_client_server_procedure(
     data_path: &Path,
     sensor_parameters: &SensorParameters,
     mut rng: &mut SmallRng,
-    end_time: time_t,
+    duration: Duration,
 ) {
+    let end_time = get_now() + duration.as_secs() as time_t;
     while get_now() < end_time {
         let sensor_reading = fs::read(data_path)
             .expect("Failure reading sensor data")
@@ -98,15 +91,12 @@ fn execute_client_server_procedure(
             .parse()
             .expect("Error parsing data fileline");
         send_sensor_reading(sensor_parameters, sensor_reading);
-        thread::sleep(Duration::from_millis(
-            sensor_parameters.sampling_interval as u64,
-        ))
+        thread::sleep(duration)
     }
 }
 
 fn send_sensor_reading(sensor_parameters: &SensorParameters, sensor_reading: f32) {
     let message = SensorMessage {
-        timestamp: get_now(),
         reading: sensor_reading,
         sensor_id: sensor_parameters.id,
     };

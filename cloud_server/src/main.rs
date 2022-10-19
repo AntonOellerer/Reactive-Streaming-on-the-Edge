@@ -39,7 +39,7 @@ fn main() {
                 let thread_handle = thread::spawn(move || {
                     execute_new_run(run_parameters.motor_monitor_port);
                 });
-                thread::sleep(utils::get_sleep_duration(
+                thread::sleep(utils::get_duration_to_end(
                     run_parameters.start_time,
                     run_parameters.duration,
                 ));

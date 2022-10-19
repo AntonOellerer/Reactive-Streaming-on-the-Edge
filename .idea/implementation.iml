@@ -11,7 +11,9 @@
       <sourceFolder url="file://$MODULE_DIR$/sensor_driver/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/test_driver/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/utils/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/pico_sensor/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
+      <excludeFolder url="file://$MODULE_DIR$/pico_sensor/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

@@ -48,7 +48,6 @@ fn start_new_run(mut stream: TcpStream) {
             sensor_parameters.id.bitand(0xFFFF)
         ))
         .arg(sensor_parameters.id.to_string())
-        .arg(sensor_parameters.start_time.to_string())
         .arg(sensor_parameters.duration.to_string())
         .arg(sensor_parameters.sampling_interval.to_string())
         .arg(sensor_parameters.request_processing_model.to_string())
