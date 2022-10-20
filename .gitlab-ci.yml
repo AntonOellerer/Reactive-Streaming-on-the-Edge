@@ -19,7 +19,12 @@ build:
   stage: build
   tags:
     - rsoe
-  script: "cargo build"
+  script:
+    - "cargo build"
+    - "cargo build -p pico_sensor --target thumbv6m-none-eabi"
+  artifacts:
+    paths:
+      - target/
 
 check-code-formatting:
   stage: check
@@ -31,7 +36,9 @@ lint:
   stage: check
   tags:
     - rsoe
-  script: "cargo clippy --all-targets --all-features -- -D warnings"
+  script:
+    - "cargo clippy --all-targets --all-features -- -D warnings"
+    - "cargo clippy -p pico_sensor --all-targets --all-features -- -D warnings"
 
 test:
   stage: test

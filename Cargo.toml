@@ -11,3 +11,14 @@ members = [
 	"test_driver",
 	"utils",
 ]
+
+default-members = [
+	"cloud_server",
+	"data_transfer_objects",
+	"motor_driver",
+	"motor_monitor",
+	"sensor",
+	"sensor_driver",
+	"test_driver",
+	"utils",
+]
