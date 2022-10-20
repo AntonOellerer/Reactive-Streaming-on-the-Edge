@@ -22,12 +22,6 @@ build:
   script:
     - "cargo build"
     - "cargo build -p pico_sensor --target thumbv6m-none-eabi"
-  artifacts:
-    paths:
-      - target/
-    exclude:
-      - target/debug/deps/**
-      - target/thumbv6m-none-eabi/debug/deps/**
 
 check-code-formatting:
   stage: check
