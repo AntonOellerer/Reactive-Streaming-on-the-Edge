@@ -1,11 +1,11 @@
 use libc::time_t;
 
-use data_transfer_objects::SensorMessage;
+use crate::TimedSensorMessage;
 
 #[derive(Debug)]
 pub struct SlidingWindow {
     window_size: u32,
-    elements: Vec<SensorMessage>,
+    elements: Vec<TimedSensorMessage>,
 }
 
 impl SlidingWindow {
@@ -16,7 +16,7 @@ impl SlidingWindow {
         }
     }
 
-    pub fn add(&mut self, element: SensorMessage) {
+    pub fn add(&mut self, element: TimedSensorMessage) {
         self.elements.push(element);
     }
 

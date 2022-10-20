@@ -119,7 +119,7 @@ fn control_sensor(
     match TcpStream::connect(format!("localhost:{}", driver_port)) {
         Ok(mut sensor_stream) => {
             write_sensor_parameters(&sensor_parameters, &mut sensor_stream);
-            thread::sleep(utils::get_sleep_duration(
+            thread::sleep(utils::get_duration_to_end(
                 motor_driver_parameters.start_time,
                 motor_driver_parameters.duration,
             ));
@@ -154,7 +154,6 @@ fn create_sensor_parameters(
 ) -> SensorParameters {
     SensorParameters {
         id,
-        start_time: motor_driver_parameters.start_time,
         duration: motor_driver_parameters.duration,
         sampling_interval: motor_driver_parameters.sampling_interval,
         request_processing_model: ClientServer,

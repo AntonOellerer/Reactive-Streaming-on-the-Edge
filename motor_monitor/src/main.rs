@@ -17,6 +17,7 @@ use data_transfer_objects::{
     Alert, BenchmarkData, BenchmarkDataType, MotorFailure, MotorMonitorParameters,
     RequestProcessingModel, SensorMessage,
 };
+use utils::get_now;
 
 use crate::motor_sensor_group_buffers::MotorGroupSensorsBuffers;
 use crate::sliding_window::SlidingWindow;
@@ -25,10 +26,27 @@ mod motor_sensor_group_buffers;
 mod rules_engine;
 mod sliding_window;
 
+#[derive(Debug)]
+pub struct TimedSensorMessage {
+    pub timestamp: time_t,
+    reading: f32,
+    _sensor_id: u32,
+}
+
+impl From<SensorMessage> for TimedSensorMessage {
+    fn from(sensor_message: SensorMessage) -> Self {
+        TimedSensorMessage {
+            timestamp: get_now(),
+            reading: sensor_message.reading,
+            _sensor_id: sensor_message.sensor_id,
+        }
+    }
+}
+
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters = get_motor_monitor_parameters(&arguments);
-    let sleep_duration = utils::get_sleep_duration(
+    let sleep_duration = utils::get_duration_to_end(
         motor_monitor_parameters.start_time,
         motor_monitor_parameters.duration,
     )
@@ -157,12 +175,6 @@ fn handle_message(
 ) {
     let motor_group_id: u32 = message.sensor_id.shr(u32::BITS / 2);
     let sensor_id = message.sensor_id.bitand(0xFFFF);
-    // if sensor_id == 0 {
-    //     eprintln!(
-    //         "Received message from {} ({} {}): {}",
-    //         message.sensor_id, motor_group_id, sensor_id, message.reading
-    //     );
-    // }
     let motor_group_buffers = get_motor_group_buffers(buffers, motor_group_id);
     add_message_to_sensor_buffer(message, sensor_id, motor_group_buffers);
     let now = utils::get_now();
@@ -187,7 +199,7 @@ fn add_message_to_sensor_buffer(
 ) {
     let sensor_buffer =
         &mut motor_group[usize::try_from(sensor_id).expect("Could not convert u32 id to usize")];
-    sensor_buffer.add(message);
+    sensor_buffer.add(TimedSensorMessage::from(message));
 }
 
 fn get_motor_group_buffers(

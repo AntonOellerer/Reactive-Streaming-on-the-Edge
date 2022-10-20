@@ -7,6 +7,7 @@ use std::str;
 use std::str::FromStr;
 use std::{fs, thread};
 
+use clap::builder::TypedValueParser;
 use clap::Parser;
 use libc::time_t;
 use log::{debug, info};
@@ -30,7 +31,7 @@ struct Args {
     sampling_interval: u32,
 
     /// Request Processing Model to use
-    #[clap(value_enum, value_parser = parse_request_processing_model, possible_values = ["ClientServer", "ReactiveStreaming"])]
+    #[clap(value_enum, value_parser = clap::builder::PossibleValuesParser::new(["ClientServer", "ReactiveStreaming"]).map(|s| parse_request_processing_model(&s)))]
     request_processing_model: RequestProcessingModel,
 }
 
@@ -46,7 +47,7 @@ struct Config {
 #[derive(Deserialize)]
 struct TestRunConfig {
     start_delay: u16,
-    duration: u64,
+    duration: u32,
 }
 
 #[derive(Deserialize)]
@@ -97,7 +98,7 @@ fn main() {
         create_cloud_server_parameters(&args, &config, start_time);
     send_motor_driver_parameters(motor_driver_parameters, &mut motor_driver_connection);
     send_cloud_server_parameters(cloud_server_parameters, &mut cloud_server_connection);
-    thread::sleep(utils::get_sleep_duration(
+    thread::sleep(utils::get_duration_to_end(
         start_time,
         config.test_run.duration,
     ));
