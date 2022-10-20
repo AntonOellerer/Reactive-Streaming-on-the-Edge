@@ -4,6 +4,17 @@ stages:
   - check
   - test
 
+variables:
+  SENSOR_ID: 0
+
+cache:
+  key:
+    files:
+      - Cargo.lock
+  paths:
+    - target/debug/deps
+    - target/thumbv6m-none-eabi/debug/deps
+
 build:
   stage: build
   tags:
@@ -12,6 +23,9 @@ build:
   artifacts:
     paths:
       - target/
+    exclude:
+      - target/debug/deps/**
+      - target/thumbv6m-none-eabi/debug/deps/**
 
 check-code-formatting:
   stage: check
