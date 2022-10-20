@@ -35,7 +35,7 @@ lint:
     - rsoe
   script:
     - "cargo clippy --all-targets --all-features -- -D warnings"
-    - "cargo clippy -p pico_sensor --all-targets --all-features -- -D warnings"
+    - "cargo clippy -p pico_sensor --all-features --target thumbv6m-none-eabi -- -D warnings"
 
 test:
   stage: test
