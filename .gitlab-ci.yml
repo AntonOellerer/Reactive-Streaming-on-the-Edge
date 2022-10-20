@@ -20,12 +20,6 @@ build:
   tags:
     - rsoe
   script: "cargo build"
-  artifacts:
-    paths:
-      - target/
-    exclude:
-      - target/debug/deps/**
-      - target/thumbv6m-none-eabi/debug/deps/**
 
 check-code-formatting:
   stage: check
