@@ -1,13 +1,25 @@
-use std::f64::consts::PI;
+#![cfg_attr(not(feature = "std"), no_std)]
+
+use core::f64::consts::PI;
+use core::time::Duration;
+#[cfg(feature = "std")]
 use std::io::Read;
-use std::net::TcpStream;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use libc::time_t;
+#[cfg(feature = "std")]
 use log::{debug, error, info, warn};
 use postcard::accumulator::{CobsAccumulator, FeedResult};
+#[cfg(feature = "std")]
 use serde::Deserialize;
 
+#[cfg(feature = "std")]
+use std::net::TcpStream;
+#[cfg(feature = "std")]
+use std::time::SystemTime;
+#[cfg(feature = "std")]
+use std::time::UNIX_EPOCH;
+
+#[cfg(feature = "std")]
 pub fn read_object<T>(stream: &mut TcpStream) -> Option<T>
 where
     T: for<'de> Deserialize<'de>,
@@ -58,6 +70,7 @@ where
     alert
 }
 
+#[cfg(feature = "std")]
 pub fn get_now() -> time_t {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -71,10 +84,10 @@ pub fn rpm_to_rad(rpm: f64) -> f64 {
     rpm / 60.0 * PI * 2.0
 }
 
-pub fn get_end_duration(start_time: time_t, duration: u64) -> u64 {
-    (start_time - get_now() + duration as i64) as u64
+pub fn get_secs_to_end(start_time: time_t, duration: u32) -> u32 {
+    (start_time - get_now() + duration as i64) as u32
 }
 
-pub fn get_sleep_duration(start_time: time_t, duration: u64) -> Duration {
-    Duration::from_secs(get_end_duration(start_time, duration))
+pub fn get_duration_to_end(start_time: time_t, duration: u32) -> Duration {
+    Duration::from_secs(get_secs_to_end(start_time, duration) as u64)
 }

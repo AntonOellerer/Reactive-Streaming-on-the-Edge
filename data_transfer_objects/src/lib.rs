@@ -1,7 +1,12 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+#[cfg(feature = "std")]
 use std::fmt;
+#[cfg(feature = "std")]
 use std::fmt::Formatter;
+#[cfg(feature = "std")]
 use std::str::FromStr;
 
+#[cfg(feature = "std")]
 use libc::time_t;
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +16,7 @@ pub enum RequestProcessingModel {
     ClientServer,
 }
 
+#[cfg(feature = "std")]
 impl FromStr for RequestProcessingModel {
     type Err = ();
 
@@ -23,6 +29,7 @@ impl FromStr for RequestProcessingModel {
     }
 }
 
+#[cfg(feature = "std")]
 impl ToString for RequestProcessingModel {
     fn to_string(&self) -> String {
         match self {
@@ -42,12 +49,14 @@ pub enum MotorFailure {
     RandomFailure,
 }
 
+#[cfg(feature = "std")]
 impl fmt::Display for MotorFailure {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 
+#[cfg(feature = "std")]
 impl FromStr for MotorFailure {
     type Err = ();
 
@@ -66,8 +75,7 @@ impl FromStr for MotorFailure {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SensorParameters {
     pub id: u32,
-    pub start_time: time_t,
-    pub duration: u64,
+    pub duration: u32,
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
     pub motor_monitor_port: u16,
@@ -91,6 +99,7 @@ pub enum BenchmarkDataType {
     MotorMonitor,
 }
 
+#[cfg(feature = "std")]
 impl BenchmarkData {
     pub fn to_csv_string(&self) -> String {
         format!(
@@ -108,15 +117,15 @@ impl BenchmarkData {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SensorMessage {
-    pub timestamp: time_t,
     pub reading: f32,
     pub sensor_id: u32,
 }
 
+#[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MotorMonitorParameters {
     pub start_time: time_t,
-    pub duration: u64,
+    pub duration: u32,
     pub request_processing_model: RequestProcessingModel,
     pub number_of_motor_groups: usize,
     pub window_size: u32,
@@ -124,10 +133,11 @@ pub struct MotorMonitorParameters {
     pub cloud_server_port: u16,
 }
 
+#[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct MotorDriverRunParameters {
     pub start_time: time_t,
-    pub duration: u64,
+    pub duration: u32,
     pub number_of_motor_groups: usize,
     pub window_size_seconds: u32,
     pub sensor_start_port: u16,
@@ -137,6 +147,7 @@ pub struct MotorDriverRunParameters {
     pub sensor_driver_start_port: u16,
 }
 
+#[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Alert {
     pub time: time_t,
@@ -144,6 +155,7 @@ pub struct Alert {
     pub failure: MotorFailure,
 }
 
+#[cfg(feature = "std")]
 impl Alert {
     pub fn to_csv(&self) -> String {
         format!("{},{},{}\n", self.motor_id, self.time, self.failure)
@@ -159,10 +171,11 @@ impl Alert {
     }
 }
 
+#[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CloudServerRunParameters {
     pub start_time: time_t,
-    pub duration: u64,
+    pub duration: u32,
     pub motor_monitor_port: u16,
     pub request_processing_model: RequestProcessingModel,
 }
