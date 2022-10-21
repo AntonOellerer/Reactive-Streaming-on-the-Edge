@@ -91,7 +91,9 @@ fn execute_client_server_procedure(
             .parse()
             .expect("Error parsing data fileline");
         send_sensor_reading(sensor_parameters, sensor_reading);
-        thread::sleep(duration)
+        thread::sleep(Duration::from_millis(
+            sensor_parameters.sampling_interval as u64,
+        ))
     }
 }
 

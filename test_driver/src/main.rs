@@ -1,5 +1,3 @@
-mod validator;
-
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -19,19 +17,25 @@ use data_transfer_objects::{
     RequestProcessingModel,
 };
 
+mod validator;
+
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 struct Args {
-    /// Number of motor groups
-    #[clap(short, long, value_parser, default_value_t = 1)]
-    motor_groups: u16,
+    /// Number of motor groups connected via tcp
+    #[clap(long, value_parser, default_value_t = 1, short)]
+    motor_groups_tcp: u16,
+
+    /// Number of motor groups connected via i2c
+    #[clap(long, value_parser, default_value_t = 0)]
+    motor_groups_i2c: u8,
 
     /// Sensor sampling interval in milliseconds
     #[clap(short, long, value_parser, default_value_t = 1000)]
     sampling_interval: u32,
 
     /// Request Processing Model to use
-    #[clap(value_enum, value_parser = clap::builder::PossibleValuesParser::new(["ClientServer", "ReactiveStreaming"]).map(|s| parse_request_processing_model(&s)))]
+    #[clap(value_enum, value_parser = clap::builder::PossibleValuesParser::new(["ClientServer", "ReactiveStreaming"]).map(| s | parse_request_processing_model(& s)))]
     request_processing_model: RequestProcessingModel,
 }
 
@@ -73,14 +77,8 @@ struct ValidatorConfig {
     validation_window: u32,
 }
 
-fn parse_request_processing_model(s: &str) -> Result<RequestProcessingModel, String> {
-    let result = RequestProcessingModel::from_str(s);
-    match result {
-        Ok(result) => Ok(result),
-        Err(_) => Err(String::from(
-            "Request Processing Model has to be either 'ReactiveStreaming' or 'ClientServer'",
-        )),
-    }
+fn parse_request_processing_model(s: &str) -> RequestProcessingModel {
+    RequestProcessingModel::from_str(s).expect("Could not parse RequestProcessingModel")
 }
 
 fn main() {
@@ -102,7 +100,7 @@ fn main() {
         start_time,
         config.test_run.duration,
     ));
-    save_benchmark_results(args.motor_groups, &mut motor_driver_connection);
+    save_benchmark_results(args.motor_groups_tcp, &mut motor_driver_connection);
     let alerts = get_alerts(&mut cloud_server_connection);
     validator::validate_alerts(&config, &args, start_time, &alerts);
 }
@@ -120,7 +118,8 @@ fn create_motor_driver_parameters(
     MotorDriverRunParameters {
         start_time,
         duration: config.test_run.duration,
-        number_of_motor_groups: args.motor_groups as usize,
+        number_of_tcp_motor_groups: args.motor_groups_tcp as usize,
+        number_of_i2c_motor_groups: args.motor_groups_i2c,
         window_size_seconds: config.motor_monitor.window_size_seconds,
         sensor_start_port: config.motor_monitor.sensors_start_port,
         sampling_interval: args.sampling_interval,
