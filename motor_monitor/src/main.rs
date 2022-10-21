@@ -17,7 +17,6 @@ use data_transfer_objects::{
     Alert, BenchmarkData, BenchmarkDataType, MotorFailure, MotorMonitorParameters,
     RequestProcessingModel, SensorMessage,
 };
-use utils::get_now;
 
 use crate::motor_sensor_group_buffers::MotorGroupSensorsBuffers;
 use crate::sliding_window::SlidingWindow;
@@ -36,7 +35,7 @@ pub struct TimedSensorMessage {
 impl From<SensorMessage> for TimedSensorMessage {
     fn from(sensor_message: SensorMessage) -> Self {
         TimedSensorMessage {
-            timestamp: get_now(),
+            timestamp: utils::get_now(),
             reading: sensor_message.reading,
             _sensor_id: sensor_message.sensor_id,
         }
@@ -155,7 +154,7 @@ fn handle_consumer(
             ))
         }
         let end_time =
-            motor_monitor_parameters.start_time + motor_monitor_parameters.duration as i64;
+            motor_monitor_parameters.start_time + motor_monitor_parameters.duration as time_t;
         while utils::get_now() < end_time {
             let message = rx.recv();
             match message {
