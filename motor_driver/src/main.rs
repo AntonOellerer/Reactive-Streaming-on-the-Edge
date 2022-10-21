@@ -75,13 +75,16 @@ fn setup_tcp_sensors(
     motor_monitor_parameters: &MotorMonitorParameters,
     pool: &ThreadPool,
 ) {
-    for motor_id in 0..motor_driver_parameters.number_of_tcp_motor_groups as u16 {
+    let no_i2c = motor_monitor_parameters.number_of_i2c_motor_groups as u16;
+    for motor_id in no_i2c..motor_driver_parameters.number_of_tcp_motor_groups as u16 + no_i2c {
         for sensor_id in 0..4u16 {
             let motor_driver_parameters_cloned = *motor_driver_parameters;
             let full_id: u32 = (motor_id as u32).shl(16) + sensor_id as u32;
-            let driver_port: u16 =
-                motor_driver_parameters.sensor_driver_start_port + motor_id * 5 + sensor_id;
-            let sensor_port: u16 = motor_monitor_parameters.start_port + motor_id * 5 + sensor_id;
+            let driver_port: u16 = motor_driver_parameters.sensor_driver_start_port
+                + (motor_id - no_i2c) * 5
+                + sensor_id;
+            let sensor_port: u16 =
+                motor_monitor_parameters.start_port + (motor_id - no_i2c) * 5 + sensor_id;
             let mut test_driver_stream_copy =
                 test_driver.try_clone().expect("Could not clone stream");
             pool.execute(move || {
