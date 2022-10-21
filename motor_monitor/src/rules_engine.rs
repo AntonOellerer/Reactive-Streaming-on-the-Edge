@@ -1,4 +1,5 @@
 use data_transfer_objects::MotorFailure;
+use libc::time_t;
 
 use crate::MotorGroupSensorsBuffers;
 
@@ -29,7 +30,7 @@ pub fn violated_rule(motor_group_buffers: &MotorGroupSensorsBuffers) -> Option<M
     } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
     {
         Some(MotorFailure::PowerFailure)
-    } else if age * torque.round() as i64 > 11_000 {
+    } else if age * torque.round() as time_t > 11_000 {
         Some(MotorFailure::OverstrainFailure)
     } else {
         None

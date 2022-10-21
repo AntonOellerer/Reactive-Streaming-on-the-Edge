@@ -60,7 +60,7 @@ fn alert_equals(validation_window: i64, expected_alert: &Alert, alert: &Alert) -
 pub(crate) fn get_expected_alerts(config: &Config, args: &Args, start_time: time_t) -> Vec<Alert> {
     let window_size = config.motor_monitor.window_size_seconds * 1000 / args.sampling_interval;
     let mut alerts: Vec<Alert> = Vec::new();
-    for i in 0..args.motor_groups {
+    for i in 0..args.motor_groups_i2c as u16 + args.motor_groups_tcp {
         let mut buffer: [Vec<(time_t, f32)>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
         for j in 0..4 {
             let seed: u32 = (i as u32).shl(16) + j as u32;

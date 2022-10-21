@@ -419,6 +419,7 @@ dependencies = [
  "env_logger",
  "log",
  "postcard",
+ "rppal",
  "serde",
  "threadpool",
  "toml",
@@ -433,6 +434,7 @@ dependencies = [
  "libc",
  "postcard",
  "procfs",
+ "rppal",
  "threadpool",
  "utils",
 ]
@@ -741,6 +743,16 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "vcell",
+]
+
+[[package]]
+name = "rppal"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c88c9c6248de4d337747b619d8f671055ef48a87dc21b97998833f189a0bbd4f"
+dependencies = [
+ "lazy_static",
+ "libc",
 ]
 
 [[package]]

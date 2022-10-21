@@ -85,7 +85,7 @@ pub fn rpm_to_rad(rpm: f64) -> f64 {
 }
 
 pub fn get_secs_to_end(start_time: time_t, duration: u32) -> u32 {
-    (start_time - get_now() + duration as i64) as u32
+    (start_time - get_now() + duration as time_t) as u32
 }
 
 pub fn get_duration_to_end(start_time: time_t, duration: u32) -> Duration {
