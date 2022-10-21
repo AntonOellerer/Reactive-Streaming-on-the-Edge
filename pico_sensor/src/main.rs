@@ -21,6 +21,7 @@ use rp_pico::hal::prelude::*;
 
 use data_transfer_objects::{SensorMessage, SensorParameters};
 
+const SENSOR_ID: u16 = include!(concat!(env!("OUT_DIR"), "/sensor_id.in"));
 const SENSOR_READINGS: &str = include_str!(concat!(env!("OUT_DIR"), "/sensor_readings.txt"));
 
 #[entry]
@@ -65,8 +66,13 @@ fn main() -> ! {
     // Create the I²C driver, using the two pre-configured pins. This will fail
     // at compile time if the pins are in the wrong mode, or if this I²C
     // peripheral isn't available on these pins!
-    let mut i2c =
-        hal::I2C::new_peripheral_event_iterator(pac.I2C0, sda_pin, scl_pin, &mut pac.RESETS, 1u16);
+    let mut i2c = hal::I2C::new_peripheral_event_iterator(
+        pac.I2C0,
+        sda_pin,
+        scl_pin,
+        &mut pac.RESETS,
+        SENSOR_ID,
+    );
     // The delay object lets us wait for specified amounts of time (in
     // milliseconds)
     let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());

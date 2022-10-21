@@ -6,6 +6,8 @@ use std::{fs, io, thread};
 
 use log::{error, info};
 use postcard::to_allocvec;
+#[cfg(feature = "rpi")]
+use rppal::i2c::I2c;
 use serde::Deserialize;
 use threadpool::ThreadPool;
 
@@ -53,10 +55,29 @@ fn main() {
 
 fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_driver: TcpStream) {
     let motor_monitor_parameters = create_motor_monitor_parameters(&motor_driver_parameters);
-    let no_of_sensors = motor_driver_parameters.number_of_motor_groups * 4;
+    let no_of_sensors = motor_driver_parameters.number_of_tcp_motor_groups * 4;
     let pool = ThreadPool::new(no_of_sensors as usize);
-    for motor_id in 0..motor_driver_parameters.number_of_motor_groups as u16 {
+    setup_tcp_sensors(
+        &motor_driver_parameters,
+        &test_driver,
+        &motor_monitor_parameters,
+        &pool,
+    );
+    #[cfg(feature = "rpi")]
+    setup_i2c_sensors(&motor_driver_parameters);
+    handle_motor_monitor(motor_monitor_parameters, test_driver);
+    pool.join();
+}
+
+fn setup_tcp_sensors(
+    motor_driver_parameters: &MotorDriverRunParameters,
+    test_driver: &TcpStream,
+    motor_monitor_parameters: &MotorMonitorParameters,
+    pool: &ThreadPool,
+) {
+    for motor_id in 0..motor_driver_parameters.number_of_tcp_motor_groups as u16 {
         for sensor_id in 0..4u16 {
+            let motor_driver_parameters_cloned = *motor_driver_parameters;
             let full_id: u32 = (motor_id as u32).shl(16) + sensor_id as u32;
             let driver_port: u16 =
                 motor_driver_parameters.sensor_driver_start_port + motor_id * 5 + sensor_id;
@@ -68,14 +89,36 @@ fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_drive
                     full_id,
                     driver_port,
                     sensor_port,
-                    &motor_driver_parameters,
+                    &motor_driver_parameters_cloned,
                     &mut test_driver_stream_copy,
                 );
             });
         }
     }
-    handle_motor_monitor(motor_monitor_parameters, test_driver);
-    pool.join();
+}
+
+#[cfg(feature = "rpi")]
+fn setup_i2c_sensors(motor_driver_parameters: &MotorDriverRunParameters) {
+    let mut message_buffer = [0u8; 32];
+    let mut i2c = I2c::new().expect("Could not instantiate i2c object");
+    for motor_id in 0..motor_driver_parameters.number_of_i2c_motor_groups {
+        for sensor_no in 0..4u8 {
+            let sensor_id: u8 = (motor_id).shl(2) + sensor_no;
+            let parameters = SensorParameters {
+                id: sensor_id as u32,
+                duration: motor_driver_parameters.duration,
+                sampling_interval: motor_driver_parameters.sampling_interval,
+                request_processing_model: motor_driver_parameters.request_processing_model,
+                motor_monitor_port: 0,
+            };
+            let message = postcard::to_slice_cobs(&parameters, &mut message_buffer)
+                .expect("Could not write i2c sensor parameters to slice");
+            i2c.set_slave_address(sensor_id as u16)
+                .unwrap_or_else(|_| panic!("Could not set slave address to {}", sensor_id));
+            i2c.write(message)
+                .expect("Could not write sensor parameters to i2c");
+        }
+    }
 }
 
 fn handle_motor_monitor(motor_monitor_parameters: MotorMonitorParameters, mut stream: TcpStream) {
@@ -91,7 +134,16 @@ fn handle_motor_monitor(motor_monitor_parameters: MotorMonitorParameters, mut st
                 .request_processing_model
                 .to_string(),
         )
-        .arg(motor_monitor_parameters.number_of_motor_groups.to_string())
+        .arg(
+            motor_monitor_parameters
+                .number_of_tcp_motor_groups
+                .to_string(),
+        )
+        .arg(
+            motor_monitor_parameters
+                .number_of_i2c_motor_groups
+                .to_string(),
+        )
         .arg(motor_monitor_parameters.window_size.to_string())
         .arg(motor_monitor_parameters.start_port.to_string())
         .arg(motor_monitor_parameters.cloud_server_port.to_string())
@@ -139,7 +191,8 @@ fn create_motor_monitor_parameters(
         start_time: motor_driver_parameters.start_time,
         duration: motor_driver_parameters.duration,
         request_processing_model: motor_driver_parameters.request_processing_model,
-        number_of_motor_groups: motor_driver_parameters.number_of_motor_groups,
+        number_of_tcp_motor_groups: motor_driver_parameters.number_of_tcp_motor_groups,
+        number_of_i2c_motor_groups: motor_driver_parameters.number_of_i2c_motor_groups,
         window_size: motor_driver_parameters.window_size_seconds * 1000
             / motor_driver_parameters.sampling_interval,
         start_port: motor_driver_parameters.sensor_start_port,

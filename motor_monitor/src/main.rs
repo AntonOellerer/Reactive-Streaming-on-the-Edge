@@ -1,6 +1,8 @@
 use std::io::{Read, Write};
 use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
+#[cfg(feature = "rpi")]
+use std::ops::Shl;
 use std::ops::{Add, BitAnd, Shr};
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -11,6 +13,8 @@ use std::time::Duration;
 use libc::time_t;
 use postcard::{from_bytes, to_allocvec_cobs};
 use procfs::process::Process;
+#[cfg(feature = "rpi")]
+use rppal::i2c::I2c;
 use threadpool::ThreadPool;
 
 use data_transfer_objects::{
@@ -52,7 +56,7 @@ fn main() {
     .add(Duration::from_secs(1)); //to account for all sensor messages
     let (tx, rx) = channel();
     let pool = ThreadPool::new(8);
-    handle_receivers(&motor_monitor_parameters, tx, &pool);
+    setup_sensor_handlers(&motor_monitor_parameters, tx, &pool);
     let consumer_thread = handle_consumer(rx, motor_monitor_parameters);
     thread::sleep(sleep_duration);
     save_benchmark_readings();
@@ -78,31 +82,50 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
                 .expect("Did not receive at least 4 arguments"),
         )
         .expect("Could not parse Request Processing Model successfully"),
-        number_of_motor_groups: arguments
+        number_of_tcp_motor_groups: arguments
             .get(4)
             .expect("Did not receive at least 5 arguments")
             .parse()
             .expect("Could not parse number_of_motor_groups successfully"),
-        window_size: arguments
+        number_of_i2c_motor_groups: arguments
             .get(5)
+            .expect("Did not receive at least 5 arguments")
+            .parse()
+            .expect("Could not parse number_of_motor_groups successfully"),
+        window_size: arguments
+            .get(6)
             .expect("Did not receive at least 6 arguments")
             .parse()
             .expect("Could not parse window_size successfully"),
         start_port: arguments
-            .get(6)
+            .get(7)
             .expect("Did not receive at least 7 arguments")
             .parse()
             .expect("Could not parse start_port successfully"),
         cloud_server_port: arguments
-            .get(7)
+            .get(8)
             .expect("Did not receive at least 8 arguments")
             .parse()
             .expect("Could not parse cloud_server_port successfully"),
     }
 }
 
-fn handle_receivers(args: &MotorMonitorParameters, tx: Sender<SensorMessage>, pool: &ThreadPool) {
-    for port in args.start_port..=args.start_port + args.number_of_motor_groups as u16 * 4 {
+fn setup_sensor_handlers(
+    args: &MotorMonitorParameters,
+    tx: Sender<SensorMessage>,
+    pool: &ThreadPool,
+) {
+    setup_tcp_sensor_handlers(args, tx.clone(), pool);
+    #[cfg(feature = "rpi")]
+    setup_i2c_sensor_handlers(args, tx, pool);
+}
+
+fn setup_tcp_sensor_handlers(
+    args: &MotorMonitorParameters,
+    tx: Sender<SensorMessage>,
+    pool: &ThreadPool,
+) {
+    for port in args.start_port..=args.start_port + args.number_of_tcp_motor_groups as u16 * 4 {
         let tx = tx.clone();
         let listener = TcpListener::bind(format!("localhost:{}", port))
             .expect(&*format!("Could not bind sensor data listener to {}", port));
@@ -120,6 +143,36 @@ fn handle_receivers(args: &MotorMonitorParameters, tx: Sender<SensorMessage>, po
             }
         });
     }
+}
+
+#[cfg(feature = "rpi")]
+fn setup_i2c_sensor_handlers(
+    args: &MotorMonitorParameters,
+    tx: Sender<SensorMessage>,
+    pool: &ThreadPool,
+) {
+    let mut i2c = I2c::new().expect("Could not instantiate i2c object");
+    let number_of_motor_groups = args.number_of_i2c_motor_groups;
+    pool.execute(move || {
+        let mut data = [0u8; size_of::<SensorMessage>()];
+        loop {
+            for motor_id in 0..number_of_motor_groups {
+                for sensor_no in 0..4u8 {
+                    let sensor_id: u8 = (motor_id).shl(2) + sensor_no;
+                    i2c.set_slave_address(sensor_id as u16)
+                        .unwrap_or_else(|_| panic!("Could not set slave address to {}", sensor_id));
+                    let read_amount = i2c
+                        .read(&mut data)
+                        .unwrap_or_else(|_| panic!("Failed to read from i2c slave {}", sensor_id));
+                    if read_amount > 0 {
+                        let message = postcard::from_bytes_cobs::<SensorMessage>(&mut data)
+                            .expect("Could not parse sensor message to struct");
+                        tx.send(message).expect("Could not forward sensor message");
+                    }
+                }
+            }
+        }
+    });
 }
 
 fn handle_sensor_message(tx: &Sender<SensorMessage>, mut stream: TcpStream) {
@@ -146,9 +199,10 @@ fn handle_consumer(
         motor_monitor_parameters.cloud_server_port
     );
     thread::spawn(move || {
-        let mut buffers: Vec<MotorGroupSensorsBuffers> =
-            Vec::with_capacity(motor_monitor_parameters.number_of_motor_groups);
-        for _ in 0..motor_monitor_parameters.number_of_motor_groups {
+        let total_motors = motor_monitor_parameters.number_of_tcp_motor_groups
+            + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
+        let mut buffers: Vec<MotorGroupSensorsBuffers> = Vec::with_capacity(total_motors);
+        for _ in 0..total_motors {
             buffers.push(MotorGroupSensorsBuffers::new(
                 motor_monitor_parameters.window_size,
             ))
