@@ -80,6 +80,7 @@ fn setup_tcp_sensors(
         for sensor_id in 0..4u16 {
             let motor_driver_parameters_cloned = *motor_driver_parameters;
             let full_id: u32 = (motor_id as u32).shl(16) + sensor_id as u32;
+            //fixme shouldn't the multiplicator be 4?
             let driver_port: u16 = motor_driver_parameters.sensor_driver_start_port
                 + (motor_id - no_i2c) * 5
                 + sensor_id;
