@@ -1,12 +1,12 @@
 use std::io::{BufRead, Write};
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{fs, thread};
 
 use libc::time_t;
-use postcard::{to_allocvec, to_allocvec_cobs};
+use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
@@ -25,11 +25,13 @@ fn main() {
     let mut rng = SmallRng::seed_from_u64(sensor_parameters.id as u64);
 
     if sensor_parameters.request_processing_model == ClientServer {
+        let stream = get_monitor_connection(&sensor_parameters);
         execute_client_server_procedure(
             data_path,
             &sensor_parameters,
-            &mut rng,
             Duration::from_secs(sensor_parameters.duration as u64),
+            &mut rng,
+            stream,
         )
     }
     save_benchmark_readings(sensor_parameters.id);
@@ -74,11 +76,24 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
     }
 }
 
+fn get_monitor_connection(sensor_parameters: &SensorParameters) -> TcpStream {
+    thread::sleep(Duration::from_secs(1));
+    eprintln!("Connecting to {}", sensor_parameters.motor_monitor_port);
+    let address = SocketAddr::from_str(&format!(
+        "127.0.0.1:{}",
+        sensor_parameters.motor_monitor_port
+    ))
+    .expect("Could not convert monitor address to socket address");
+    TcpStream::connect_timeout(&address, Duration::from_secs(5))
+        .expect("Could not connect to motor monitor")
+}
+
 fn execute_client_server_procedure(
     data_path: &Path,
     sensor_parameters: &SensorParameters,
-    mut rng: &mut SmallRng,
     duration: Duration,
+    mut rng: &mut SmallRng,
+    mut stream: TcpStream,
 ) {
     let end_time = get_now() + duration.as_secs() as time_t;
     while get_now() < end_time {
@@ -90,33 +105,27 @@ fn execute_client_server_procedure(
             .expect("Error reading from data file iterator")
             .parse()
             .expect("Error parsing data fileline");
-        send_sensor_reading(sensor_parameters, sensor_reading);
+        send_sensor_reading(sensor_parameters, sensor_reading, &mut stream);
         thread::sleep(Duration::from_millis(
             sensor_parameters.sampling_interval as u64,
         ))
     }
 }
 
-fn send_sensor_reading(sensor_parameters: &SensorParameters, sensor_reading: f32) {
+fn send_sensor_reading(
+    sensor_parameters: &SensorParameters,
+    sensor_reading: f32,
+    stream: &mut TcpStream,
+) {
     let message = SensorMessage {
         reading: sensor_reading,
         sensor_id: sensor_parameters.id,
     };
-    match TcpStream::connect(format!(
-        "localhost:{}",
-        sensor_parameters.motor_monitor_port
-    )) {
-        Ok(mut stream) => {
-            let vec: Vec<u8> =
-                to_allocvec(&message).expect("Could not write sensor reading to Vec<u8>");
-            stream
-                .write_all(&vec)
-                .expect("Could not write sensor reading bytes to TcpStream");
-        }
-        Err(e) => {
-            eprintln!("Failed to connect: {}", e);
-        }
-    }
+    let vec: Vec<u8> =
+        to_allocvec_cobs(&message).expect("Could not write sensor reading to Vec<u8>");
+    stream
+        .write_all(&vec)
+        .expect("Could not write sensor reading bytes to TcpStream");
 }
 
 fn save_benchmark_readings(id: u32) {

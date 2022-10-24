@@ -7,7 +7,7 @@ use std::io::Read;
 
 use libc::time_t;
 #[cfg(feature = "std")]
-use log::{debug, error, info, warn};
+use log::{debug, error, trace, warn};
 use postcard::accumulator::{CobsAccumulator, FeedResult};
 #[cfg(feature = "std")]
 use serde::Deserialize;
@@ -27,16 +27,16 @@ where
     let mut raw_buf = [0u8; 1];
     let mut cobs_buf: CobsAccumulator<256> = CobsAccumulator::new();
     let mut alert: Option<T> = None;
-    debug!("Reading from stream");
+    trace!("Reading from stream");
     while let Ok(ct) = stream.read(&mut raw_buf) {
-        debug!("Read into buffer: {}", ct);
+        trace!("Read into buffer: {}", ct);
         // Finished reading input
         if ct == 0 {
             break;
         }
         let mut window = &raw_buf[..ct];
         while alert.is_none() && !window.is_empty() {
-            debug!("Reading into accumulator");
+            trace!("Reading into accumulator");
             window = match cobs_buf.feed::<T>(window) {
                 FeedResult::Consumed => {
                     debug!("Consumed buffer");
@@ -59,14 +59,14 @@ where
                     remaining
                 }
             };
-            debug!("Read into accumulator");
+            trace!("Read into accumulator");
         }
-        debug!("Read full window");
+        trace!("Read full window");
         if alert.is_some() {
             return alert;
         }
     }
-    info!("Read");
+    trace!("Read");
     alert
 }
 

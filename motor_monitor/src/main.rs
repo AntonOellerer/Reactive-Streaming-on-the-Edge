@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::Write;
 use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
 #[cfg(feature = "rpi")]
@@ -11,7 +11,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use libc::time_t;
-use postcard::{from_bytes, to_allocvec_cobs};
+use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 #[cfg(feature = "rpi")]
 use rppal::i2c::I2c;
@@ -125,16 +125,16 @@ fn setup_tcp_sensor_handlers(
     tx: Sender<SensorMessage>,
     pool: &ThreadPool,
 ) {
-    for port in args.start_port..=args.start_port + args.number_of_tcp_motor_groups as u16 * 4 {
+    for port in args.start_port..args.start_port + args.number_of_tcp_motor_groups as u16 * 4 {
         let tx = tx.clone();
-        let listener = TcpListener::bind(format!("localhost:{}", port))
-            .expect(&*format!("Could not bind sensor data listener to {}", port));
         pool.execute(move || {
+            let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
+                .unwrap_or_else(|_| panic!("Could not bind sensor data listener to {}", port));
             for stream in listener.incoming() {
                 match stream {
-                    Ok(stream) => {
-                        handle_sensor_message(&tx, stream);
-                    }
+                    Ok(mut stream) => loop {
+                        handle_sensor_message(&tx, &mut stream);
+                    },
                     Err(e) => {
                         eprintln!("Error: {}", e);
                         /* connection failed */
@@ -175,14 +175,11 @@ fn setup_i2c_sensor_handlers(
     });
 }
 
-fn handle_sensor_message(tx: &Sender<SensorMessage>, mut stream: TcpStream) {
-    let mut data = [0; size_of::<SensorMessage>()];
-    let _read = stream
-        .read(&mut data)
-        .expect("Could not read sensor data bytes from stream");
-    let result: SensorMessage =
-        from_bytes(&data).expect("Could not parse sensor data bytes to SensorMessage");
-    let _ = tx.send(result);
+fn handle_sensor_message(tx: &Sender<SensorMessage>, stream: &mut TcpStream) {
+    if let Some(message) = utils::read_object::<SensorMessage>(stream) {
+        tx.send(message)
+            .unwrap_or_else(|_| eprintln!("Could not parse sensor message successfully"))
+    }
 }
 
 fn handle_consumer(
