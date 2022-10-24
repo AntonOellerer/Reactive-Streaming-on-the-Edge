@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::Write;
 use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
 #[cfg(feature = "rpi")]
@@ -11,7 +11,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use libc::time_t;
-use postcard::{from_bytes, to_allocvec_cobs};
+use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 #[cfg(feature = "rpi")]
 use rppal::i2c::I2c;
@@ -176,13 +176,10 @@ fn setup_i2c_sensor_handlers(
 }
 
 fn handle_sensor_message(tx: &Sender<SensorMessage>, mut stream: TcpStream) {
-    let mut data = [0; size_of::<SensorMessage>()];
-    let _read = stream
-        .read(&mut data)
-        .expect("Could not read sensor data bytes from stream");
-    let result: SensorMessage =
-        from_bytes(&data).expect("Could not parse sensor data bytes to SensorMessage");
-    let _ = tx.send(result);
+    let sensor_message = utils::read_object::<SensorMessage>(&mut stream)
+        .expect("Could not parse sensor message successfully");
+    tx.send(sensor_message)
+        .expect("Could not write sensor message to handler thread");
 }
 
 fn handle_consumer(

@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{fs, thread};
 
 use libc::time_t;
-use postcard::{to_allocvec, to_allocvec_cobs};
+use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
@@ -108,7 +108,7 @@ fn send_sensor_reading(sensor_parameters: &SensorParameters, sensor_reading: f32
     )) {
         Ok(mut stream) => {
             let vec: Vec<u8> =
-                to_allocvec(&message).expect("Could not write sensor reading to Vec<u8>");
+                to_allocvec_cobs(&message).expect("Could not write sensor reading to Vec<u8>");
             stream
                 .write_all(&vec)
                 .expect("Could not write sensor reading bytes to TcpStream");
