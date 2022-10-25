@@ -106,8 +106,8 @@ fn main() {
 }
 
 fn connect_to_driver(port: u16) -> TcpStream {
-    TcpStream::connect(format!("localhost:{}", port))
-        .unwrap_or_else(|_| panic!("Could not connect to {}", port))
+    TcpStream::connect(format!("localhost:{port}"))
+        .unwrap_or_else(|_| panic!("Could not connect to {port}"))
 }
 
 fn create_motor_driver_parameters(

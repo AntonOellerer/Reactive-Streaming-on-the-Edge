@@ -9,9 +9,9 @@ use data_transfer_objects::SensorParameters;
 
 fn main() {
     let driver_port = std::env::args().nth(1).expect("no port given");
-    eprintln!("Binding to {}", driver_port);
+    eprintln!("Binding to {driver_port}");
     let listener =
-        TcpListener::bind(format!("localhost:{}", driver_port)).expect("Failure binding to port");
+        TcpListener::bind(format!("localhost:{driver_port}")).expect("Failure binding to port");
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -21,7 +21,7 @@ fn main() {
                 });
             }
             Err(e) => {
-                println!("Error: {}", e);
+                println!("Error: {e}");
                 /* connection failed */
             }
         }

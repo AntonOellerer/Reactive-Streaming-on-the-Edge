@@ -52,7 +52,7 @@ pub enum MotorFailure {
 #[cfg(feature = "std")]
 impl fmt::Display for MotorFailure {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 

@@ -68,9 +68,9 @@ fn execute_new_run(monitor_port: u16) {
         .truncate(true)
         .open("alert_protocol.csv")
         .expect("Could not open alert protocol for writing");
-    let monitor_listener = TcpListener::bind(format!("localhost:{}", monitor_port))
-        .unwrap_or_else(|_| panic!("Failure binding to monitor port {}", monitor_port));
-    info!("Bound to localhost:{}", monitor_port);
+    let monitor_listener = TcpListener::bind(format!("localhost:{monitor_port}"))
+        .unwrap_or_else(|_| panic!("Failure binding to monitor port {monitor_port}"));
+    info!("Bound to localhost:{monitor_port}");
     let alarm_stream = monitor_listener.accept();
     match alarm_stream {
         Ok((mut alarm_stream, _)) => {

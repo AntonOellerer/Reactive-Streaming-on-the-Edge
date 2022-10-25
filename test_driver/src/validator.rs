@@ -54,7 +54,7 @@ pub(crate) fn validate_alerts(config: &Config, args: &Args, start_time: time_t, 
 fn alert_equals(validation_window: i64, expected_alert: &Alert, alert: &Alert) -> bool {
     expected_alert.failure == alert.failure
         && expected_alert.motor_id == alert.motor_id
-        && (expected_alert.time - alert.time).abs() <= validation_window as i64
+        && (expected_alert.time - alert.time).abs() <= validation_window
 }
 
 pub(crate) fn get_expected_alerts(config: &Config, args: &Args, start_time: time_t) -> Vec<Alert> {
@@ -90,7 +90,7 @@ fn get_motor_alerts(
         let process_temperature = get_average_value(i, window_size, &buffer[1]);
         let rotational_speed = get_average_value(i, window_size, &buffer[2]);
         let torque = get_average_value(i, window_size, &buffer[3]);
-        let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed as f64);
+        let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
         let time = buffer[0][i].0;
         let age = time - sensor_replacing_time;
         if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
@@ -130,7 +130,7 @@ fn get_average_value(position: usize, window_size: u32, buffer: &[(time_t, f32)]
 }
 
 fn get_sensor_reading(rng: &mut SmallRng, j: i32) -> f32 {
-    fs::read(format!("resources/{}.txt", j))
+    fs::read(format!("resources/{j}.txt"))
         .expect("Failure reading sensor data")
         .lines()
         .choose_stable(rng)

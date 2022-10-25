@@ -128,15 +128,15 @@ fn setup_tcp_sensor_handlers(
     for port in args.start_port..args.start_port + args.number_of_tcp_motor_groups as u16 * 4 {
         let tx = tx.clone();
         pool.execute(move || {
-            let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
-                .unwrap_or_else(|_| panic!("Could not bind sensor data listener to {}", port));
+            let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
+                .unwrap_or_else(|_| panic!("Could not bind sensor data listener to {port}"));
             for stream in listener.incoming() {
                 match stream {
                     Ok(mut stream) => loop {
                         handle_sensor_message(&tx, &mut stream);
                     },
                     Err(e) => {
-                        eprintln!("Error: {}", e);
+                        eprintln!("Error: {e}");
                         /* connection failed */
                     }
                 }
@@ -160,10 +160,10 @@ fn setup_i2c_sensor_handlers(
                 for sensor_no in 0..4u8 {
                     let sensor_id: u8 = (motor_id).shl(2) + sensor_no;
                     i2c.set_slave_address(sensor_id as u16)
-                        .unwrap_or_else(|_| panic!("Could not set slave address to {}", sensor_id));
+                        .unwrap_or_else(|_| panic!("Could not set sensor address to {sensor_id}"));
                     let read_amount = i2c
                         .read(&mut data)
-                        .unwrap_or_else(|_| panic!("Failed to read from i2c slave {}", sensor_id));
+                        .unwrap_or_else(|_| panic!("Failed to read from i2c sensor {sensor_id}"));
                     if read_amount > 0 {
                         let message = postcard::from_bytes_cobs::<SensorMessage>(&mut data)
                             .expect("Could not parse sensor message to struct");
@@ -212,7 +212,7 @@ fn handle_consumer(
                 Ok(message) => {
                     handle_message(&mut buffers, message, &mut cloud_server);
                 }
-                Err(e) => eprintln!("Error: {}", e),
+                Err(e) => eprintln!("Error: {e}"),
             };
         }
     })
@@ -231,7 +231,7 @@ fn handle_message(
     motor_group_buffers.refresh_caches(now);
     let rule_violated = rules_engine::violated_rule(motor_group_buffers);
     if let Some(rule) = rule_violated {
-        eprintln!("Found rule violation {} in motor {}", rule, motor_group_id);
+        eprintln!("Found rule violation {rule} in motor {motor_group_id}");
         let alert = create_alert(motor_group_id, now, rule);
         let vec: Vec<u8> =
             to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");

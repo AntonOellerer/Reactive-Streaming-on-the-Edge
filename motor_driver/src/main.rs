@@ -56,7 +56,7 @@ fn main() {
 fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_driver: TcpStream) {
     let motor_monitor_parameters = create_motor_monitor_parameters(&motor_driver_parameters);
     let no_of_sensors = motor_driver_parameters.number_of_tcp_motor_groups * 4;
-    let pool = ThreadPool::new(no_of_sensors as usize);
+    let pool = ThreadPool::new(no_of_sensors);
     setup_tcp_sensors(
         &motor_driver_parameters,
         &test_driver,
@@ -118,7 +118,7 @@ fn setup_i2c_sensors(motor_driver_parameters: &MotorDriverRunParameters) {
             let message = postcard::to_slice_cobs(&parameters, &mut message_buffer)
                 .expect("Could not write i2c sensor parameters to slice");
             i2c.set_slave_address(sensor_id as u16)
-                .unwrap_or_else(|_| panic!("Could not set slave address to {}", sensor_id));
+                .unwrap_or_else(|_| panic!("Could not set slave address to {sensor_id}"));
             i2c.write(message)
                 .expect("Could not write sensor parameters to i2c");
         }
@@ -172,7 +172,7 @@ fn control_sensor(
         id, driver_port, sensor_port
     );
     let sensor_parameters = create_sensor_parameters(id, sensor_port, motor_driver_parameters);
-    match TcpStream::connect(format!("localhost:{}", driver_port)) {
+    match TcpStream::connect(format!("localhost:{driver_port}")) {
         Ok(mut sensor_stream) => {
             write_sensor_parameters(&sensor_parameters, &mut sensor_stream);
             thread::sleep(utils::get_duration_to_end(
