@@ -1,0 +1,20 @@
+[package]
+name = "motor_monitor_rx"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+data_transfer_objects = { path = "../data_transfer_objects" }
+utils = { path = "../utils" }
+postcard = { version = "1.0.2", features = ["alloc"] }
+threadpool = "1.8.1"
+libc = { version = "0.2", default-features = false }
+procfs = { version = "0.14.1", default-features = false }
+rppal = { version = "0.13.1", optional = true }
+rxrust = "1.0.0-alpha.3"
+futures = "0.3.25"
+
+[features]
+rpi = ["dep:rppal"]

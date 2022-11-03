@@ -20,6 +20,7 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 #[cfg(feature = "std")]
+//todo find way to return error object
 pub fn read_object<T>(stream: &mut TcpStream) -> Option<T>
 where
     T: for<'de> Deserialize<'de>,

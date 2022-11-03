@@ -127,7 +127,7 @@ fn setup_i2c_sensors(motor_driver_parameters: &MotorDriverRunParameters) {
 fn handle_motor_monitor(motor_monitor_parameters: MotorMonitorParameters, mut stream: TcpStream) {
     println!("Running motor monitor");
     let output = Command::new("cargo")
-        .current_dir("../motor_monitor")
+        .current_dir("../motor_monitor_cs")
         .arg("run")
         .arg("--")
         .arg(motor_monitor_parameters.start_time.to_string())

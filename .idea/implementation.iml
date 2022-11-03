@@ -6,12 +6,13 @@
       <sourceFolder url="file://$MODULE_DIR$/cloud_server/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/data_transfer_objects/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/motor_driver/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/motor_monitor/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/sensor/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/sensor_driver/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/test_driver/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/utils/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/pico_sensor/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/motor_monitor_cs/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/motor_monitor_rx/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/pico_sensor/target" />
     </content>

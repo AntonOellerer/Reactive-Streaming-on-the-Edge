@@ -15,6 +15,7 @@ use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 #[cfg(feature = "rpi")]
 use rppal::i2c::I2c;
+
 use threadpool::ThreadPool;
 
 use data_transfer_objects::{
@@ -49,14 +50,18 @@ impl From<SensorMessage> for TimedSensorMessage {
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters = get_motor_monitor_parameters(&arguments);
+    execute_client_server_procedure(&motor_monitor_parameters);
+}
+
+fn execute_client_server_procedure(motor_monitor_parameters: &MotorMonitorParameters) {
     let sleep_duration = utils::get_duration_to_end(
         motor_monitor_parameters.start_time,
         motor_monitor_parameters.duration,
     )
     .add(Duration::from_secs(1)); //to account for all sensor messages
     let (tx, rx) = channel();
-    let sensor_listener =
-        thread::spawn(move || setup_sensor_handlers(motor_monitor_parameters, tx));
+    let mmpc = *motor_monitor_parameters;
+    let sensor_listener = thread::spawn(move || setup_sensor_handlers(mmpc, tx));
     let consumer_thread = handle_consumer(rx, motor_monitor_parameters);
     thread::sleep(sleep_duration);
     save_benchmark_readings();
@@ -180,7 +185,7 @@ fn handle_sensor_message(tx: &Sender<SensorMessage>, stream: &mut TcpStream) {
 
 fn handle_consumer(
     rx: Receiver<SensorMessage>,
-    motor_monitor_parameters: MotorMonitorParameters,
+    motor_monitor_parameters: &MotorMonitorParameters,
 ) -> JoinHandle<()> {
     let mut cloud_server = TcpStream::connect(format!(
         "localhost:{}",
@@ -191,6 +196,7 @@ fn handle_consumer(
         "Connected to localhost:{}",
         motor_monitor_parameters.cloud_server_port
     );
+    let motor_monitor_parameters = *motor_monitor_parameters;
     thread::spawn(move || {
         let total_motors = motor_monitor_parameters.number_of_tcp_motor_groups
             + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
