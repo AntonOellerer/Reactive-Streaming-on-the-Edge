@@ -76,7 +76,7 @@ pub fn get_now() -> time_t {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Could not get epoch seconds")
-        .as_secs()
+        .as_millis()
         .try_into()
         .expect("Could not convert now start to time_t")
 }
