@@ -115,7 +115,7 @@ impl BenchmarkData {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct SensorMessage {
     pub reading: f32,
     pub sensor_id: u32,

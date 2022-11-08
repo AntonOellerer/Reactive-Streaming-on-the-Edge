@@ -1,20 +1,33 @@
 #![feature(drain_filter)]
 
-use std::net::TcpListener;
+use std::any::type_name;
+use std::borrow::{Borrow, BorrowMut};
+use std::collections::HashMap;
+use std::net::{TcpListener, TcpStream};
+use std::ops::{BitAnd, Shr};
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 
+use futures::executor::ThreadPool;
+use futures::AsyncWriteExt;
 use libc::time_t;
-use rxrust::observable;
+use postcard::to_allocvec_cobs;
+use rxrust::prelude::SubscribeNext;
+use rxrust::prelude::*;
+use std::io::Write;
 
-use data_transfer_objects::{MotorMonitorParameters, RequestProcessingModel, SensorMessage};
+use data_transfer_objects::{
+    Alert, MotorFailure, MotorMonitorParameters, RequestProcessingModel, SensorMessage,
+};
 
 mod rx_utils;
+mod sliding_window;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct TimedSensorMessage {
     pub timestamp: time_t,
     reading: f32,
-    _sensor_id: u32,
+    sensor_id: u32,
 }
 
 impl From<SensorMessage> for TimedSensorMessage {
@@ -22,7 +35,7 @@ impl From<SensorMessage> for TimedSensorMessage {
         TimedSensorMessage {
             timestamp: utils::get_now(),
             reading: sensor_message.reading,
-            _sensor_id: sensor_message.sensor_id,
+            sensor_id: sensor_message.sensor_id,
         }
     }
 }
@@ -76,24 +89,179 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters = get_motor_monitor_parameters(&arguments);
-    execute_reactive_streaming_procedure(&motor_monitor_parameters);
+    let mut cloud_server = TcpStream::connect(format!(
+        "localhost:{}",
+        motor_monitor_parameters.cloud_server_port
+    ))
+    .expect("Could not open connection to cloud server");
+    execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server);
 }
 
-fn execute_reactive_streaming_procedure(motor_monitor_parameters: &MotorMonitorParameters) {
-    observable::create(|subscriber| {
+fn execute_reactive_streaming_procedure<'a>(
+    motor_monitor_parameters: &MotorMonitorParameters,
+    cloud_server: &mut TcpStream,
+) {
+    let pool = ThreadPool::new().unwrap();
+    let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
+        + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
+    let motor_ages: Arc<Mutex<Vec<time_t>>> = Arc::new(Mutex::new(
+        (0..total_number_of_motors)
+            .map(|_| utils::get_now())
+            .collect(),
+    ));
+    create(|subscriber| {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", "8080"))
             .unwrap_or_else(|_| panic!("Could not bind sensor data listener to {}", "8080"));
         let mut stream = listener.accept().unwrap().0;
         loop {
             match utils::read_object::<SensorMessage>(&mut stream) {
                 None => subscriber.complete(),
-                Some(sensor_message) => subscriber.next(TimedSensorMessage::from(sensor_message)),
+                Some(sensor_message) => subscriber.next(sensor_message),
             }
         }
-        subscriber.error("Not reachable");
-    });
+        subscriber.error(());
+    })
+    .map(TimedSensorMessage::from)
     // .sliding_window(
-    //     Duration::from_millis(motor_monitor_parameters.window_size as u64),
-    //     |sensor_message: TimedSensorMessage| sensor_message.timestamp,
-    // );
+    //     Duration::from_millis(210),
+    //     |sensor_message| Duration::from_millis(sensor_message.timestamp as u64),
+    //     pool,
+    // )
+    .group_by(|sensor_message: &TimedSensorMessage| get_motor_id(sensor_message.sensor_id))
+    .flat_map(|motor_group| {
+        motor_group
+            .group_by(|sensor_message: &TimedSensorMessage| sensor_message.sensor_id)
+            .map(|sensor_group| {
+                let mut sensor_id: Option<u32> = None;
+                let mut average: Option<f64> = None;
+                sensor_group
+                    .map(|sensor_message: TimedSensorMessage| {
+                        if sensor_id.is_none() {
+                            sensor_id = Some(sensor_message.sensor_id);
+                        }
+                        sensor_message.reading as f64
+                    })
+                    .average()
+                    .subscribe(|value| average = Some(value));
+                (sensor_id, average)
+            })
+            .filter_map(|(sensor_id, average): (Option<u32>, Option<f64>)| {
+                match (sensor_id, average) {
+                    (Some(sensor_id), Some(average)) => Some((sensor_id, average)),
+                    _ => None,
+                }
+            })
+            .group_by(|(sensor_id, _): &(u32, f64)| get_motor_id(*sensor_id))
+            .flat_map(|group| {
+                group
+                    //todo write object for hashmap like the buffers?
+                    .reduce_initial(
+                        (0usize, HashMap::new()),
+                        |(_, mut map), (motor_sensor_id, average)| {
+                            map.insert(get_sensor_id(motor_sensor_id), average);
+                            (get_motor_id(motor_sensor_id) as usize, map)
+                        },
+                    )
+                    .filter_map(|(motor_id, value_map)| {
+                        let arc = Arc::clone(&motor_ages);
+                        let mut vec = (*arc).lock().unwrap();
+                        let motor_age = vec[motor_id];
+                        if let Some(failure) = violated_rule(&value_map, motor_age) {
+                            let now = utils::get_now();
+                            vec[motor_id] = now;
+                            Some(Alert {
+                                time: now,
+                                motor_id: motor_id as u16,
+                                failure,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+            })
+    })
+    .subscribe(|alert| {
+        let vec: Vec<u8> =
+            to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
+        cloud_server
+            .write_all(&vec)
+            .expect("Could not send motor alert to cloud server");
+    });
+    // .subscribe(|_i| println!("Test"));
+    return;
+}
+
+fn violated_rule(value_map: &HashMap<u32, f64>, motor_1_age: time_t) -> Option<MotorFailure> {
+    let air_temperature = *value_map
+        .get(&0)
+        .expect("No air temperature (0) in value map");
+    let process_temperature = *value_map
+        .get(&1)
+        .expect("No process temperature (1) in value map");
+    let rotational_speed = *value_map
+        .get(&2)
+        .expect("No rotational_speed (2) in value map");
+    let torque = *value_map.get(&3).expect("No torque (3) in value map");
+    let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
+    // let age = utils::get_now() - motor_group_buffers.age;
+    if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
+        Some(MotorFailure::HeatDissipationFailure)
+    } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
+    {
+        Some(MotorFailure::PowerFailure)
+        // } else if age * torque.round() as time_t > 11_000 {
+        //     Some(MotorFailure::OverstrainFailure)
+    } else {
+        None
+    }
+}
+
+fn type_of<T>(_: T) -> &'static str {
+    type_name::<T>()
+}
+
+fn get_motor_id(sensor_id: u32) -> u32 {
+    sensor_id.shr(u32::BITS / 2)
+}
+
+fn get_sensor_id(sensor_id: u32) -> u32 {
+    sensor_id.bitand(0xFFFF)
+}
+
+#[cfg(test)]
+mod tests {
+    use rxrust::prelude::*;
+
+    use data_transfer_objects::SensorMessage;
+
+    use crate::TimedSensorMessage;
+
+    #[test]
+    fn it_can_group() {
+        observable::from_iter([
+            SensorMessage {
+                reading: 0.0,
+                sensor_id: 0,
+            },
+            SensorMessage {
+                reading: 4.0,
+                sensor_id: 1,
+            },
+            SensorMessage {
+                reading: 6.0,
+                sensor_id: 1,
+            },
+            SensorMessage {
+                reading: 2.0,
+                sensor_id: 0,
+            },
+        ])
+        .map(TimedSensorMessage::from)
+        .group_by(|person: &TimedSensorMessage| person.sensor_id)
+        .subscribe(|group| {
+            group
+                .reduce(|acc, person| format!("{} {}", acc, person.reading))
+                .subscribe(|result| println!("{}", result));
+        });
+    }
 }
