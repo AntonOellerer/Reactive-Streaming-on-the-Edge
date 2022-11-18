@@ -81,6 +81,12 @@ pub fn get_now() -> time_t {
         .expect("Could not convert now start to time_t")
 }
 
+pub fn get_now_duration() -> Duration {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Could not get epoch seconds")
+}
+
 pub fn rpm_to_rad(rpm: f64) -> f64 {
     rpm / 60.0 * PI * 2.0
 }
@@ -90,5 +96,13 @@ pub fn get_secs_to_end(start_time: time_t, duration: u32) -> u32 {
 }
 
 pub fn get_duration_to_end(start_time: time_t, duration: u32) -> Duration {
+    eprintln!("start time: {:?}, now: {:?}, duration: {:?}", start_time, get_now(), duration);
+    eprintln!("Result: {:?}", (start_time - get_now()));
     Duration::from_secs(get_secs_to_end(start_time, duration) as u64)
+}
+
+pub fn  get_duration_to_end_from_durations(start_time: Duration, duration: Duration) -> Duration {
+    eprintln!("start time: {:?}, now: {:?}, duration: {:?}", start_time, get_now_duration(), duration);
+    eprintln!("Result: {:?}", (start_time - get_now_duration()));
+    start_time - get_now_duration() + duration
 }

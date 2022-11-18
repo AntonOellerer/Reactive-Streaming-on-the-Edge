@@ -3,10 +3,12 @@
 use std::any::type_name;
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
+use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::ops::{BitAnd, Shr};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use futures::executor::ThreadPool;
 use futures::AsyncWriteExt;
@@ -14,7 +16,6 @@ use libc::time_t;
 use postcard::to_allocvec_cobs;
 use rxrust::prelude::SubscribeNext;
 use rxrust::prelude::*;
-use std::io::Write;
 
 use data_transfer_objects::{
     Alert, MotorFailure, MotorMonitorParameters, RequestProcessingModel, SensorMessage,
@@ -104,9 +105,9 @@ fn execute_reactive_streaming_procedure<'a>(
     let pool = ThreadPool::new().unwrap();
     let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
         + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
-    let motor_ages: Arc<Mutex<Vec<time_t>>> = Arc::new(Mutex::new(
+    let motor_ages: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(
         (0..total_number_of_motors)
-            .map(|_| utils::get_now())
+            .map(|_| utils::get_now_duration())
             .collect(),
     ));
     create(|subscriber| {
@@ -167,10 +168,10 @@ fn execute_reactive_streaming_procedure<'a>(
                         let mut vec = (*arc).lock().unwrap();
                         let motor_age = vec[motor_id];
                         if let Some(failure) = violated_rule(&value_map, motor_age) {
-                            let now = utils::get_now();
+                            let now = utils::get_now_duration();
                             vec[motor_id] = now;
                             Some(Alert {
-                                time: now,
+                                time: now.as_millis() as time_t,
                                 motor_id: motor_id as u16,
                                 failure,
                             })
@@ -191,7 +192,7 @@ fn execute_reactive_streaming_procedure<'a>(
     return;
 }
 
-fn violated_rule(value_map: &HashMap<u32, f64>, motor_1_age: time_t) -> Option<MotorFailure> {
+fn violated_rule(value_map: &HashMap<u32, f64>, motor_age: Duration) -> Option<MotorFailure> {
     let air_temperature = *value_map
         .get(&0)
         .expect("No air temperature (0) in value map");
@@ -203,14 +204,14 @@ fn violated_rule(value_map: &HashMap<u32, f64>, motor_1_age: time_t) -> Option<M
         .expect("No rotational_speed (2) in value map");
     let torque = *value_map.get(&3).expect("No torque (3) in value map");
     let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
-    // let age = utils::get_now() - motor_group_buffers.age;
+    let age = utils::get_now_duration() - motor_age;
     if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
         Some(MotorFailure::HeatDissipationFailure)
     } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
     {
         Some(MotorFailure::PowerFailure)
-        // } else if age * torque.round() as time_t > 11_000 {
-        //     Some(MotorFailure::OverstrainFailure)
+    } else if age.as_secs_f64() * torque > 11_000_f64 {
+        Some(MotorFailure::OverstrainFailure)
     } else {
         None
     }

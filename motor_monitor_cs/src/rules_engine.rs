@@ -1,5 +1,6 @@
-use data_transfer_objects::MotorFailure;
 use libc::time_t;
+
+use data_transfer_objects::MotorFailure;
 
 use crate::MotorGroupSensorsBuffers;
 
@@ -25,12 +26,15 @@ pub fn violated_rule(motor_group_buffers: &MotorGroupSensorsBuffers) -> Option<M
     let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
     let torque = motor_group_buffers.torque_sensor.get_window_average();
     let age = utils::get_now() - motor_group_buffers.age;
+    // eprintln!("{} {}", (air_temperature - process_temperature).abs(), rotational_speed);
+    // eprintln!("{}", torque * rotational_speed_in_rad);
+    // eprintln!("{}", (age / 1000) as f64 * torque.round());
     if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
         Some(MotorFailure::HeatDissipationFailure)
     } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
     {
         Some(MotorFailure::PowerFailure)
-    } else if age * torque.round() as time_t > 11_000 {
+    } else if (age / 1000) * torque.round() as time_t > 11_000 {
         Some(MotorFailure::OverstrainFailure)
     } else {
         None

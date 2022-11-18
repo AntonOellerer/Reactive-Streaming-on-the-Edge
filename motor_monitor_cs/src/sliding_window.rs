@@ -31,7 +31,7 @@ impl SlidingWindow {
 
     pub fn refresh_cache(&mut self, at_time: time_t) {
         self.elements
-            .retain(|message| message.timestamp > at_time - self.window_size as time_t);
+            .retain(|message| message.timestamp > at_time - (self.window_size * 1000) as time_t);
     }
 
     pub fn reset(&mut self) {

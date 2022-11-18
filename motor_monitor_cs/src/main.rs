@@ -1,9 +1,9 @@
 use std::io::Write;
 use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
+use std::ops::{Add, BitAnd, Shr};
 #[cfg(feature = "rpi")]
 use std::ops::Shl;
-use std::ops::{Add, BitAnd, Shr};
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
@@ -15,7 +15,6 @@ use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 #[cfg(feature = "rpi")]
 use rppal::i2c::I2c;
-
 use threadpool::ThreadPool;
 
 use data_transfer_objects::{
@@ -63,7 +62,9 @@ fn execute_client_server_procedure(motor_monitor_parameters: &MotorMonitorParame
     let mmpc = *motor_monitor_parameters;
     let sensor_listener = thread::spawn(move || setup_sensor_handlers(mmpc, tx));
     let consumer_thread = handle_consumer(rx, motor_monitor_parameters);
+    eprintln!("Sleeping {:?}", sleep_duration);
     thread::sleep(sleep_duration);
+    eprintln!("Woke up");
     save_benchmark_readings();
     drop(sensor_listener);
     drop(consumer_thread);
@@ -178,8 +179,9 @@ fn setup_i2c_sensor_handlers(
 
 fn handle_sensor_message(tx: &Sender<SensorMessage>, stream: &mut TcpStream) {
     if let Some(message) = utils::read_object::<SensorMessage>(stream) {
+        eprintln!("{:?}", message);
         tx.send(message)
-            .unwrap_or_else(|_| eprintln!("Could not parse sensor message successfully"))
+            .unwrap_or_else(|e| eprintln!("Could not send sensor message successfully {}", e))
     }
 }
 
@@ -207,7 +209,7 @@ fn handle_consumer(
             ))
         }
         let end_time =
-            motor_monitor_parameters.start_time + motor_monitor_parameters.duration as time_t;
+            motor_monitor_parameters.start_time + (motor_monitor_parameters.duration * 1000) as time_t;
         while utils::get_now() < end_time {
             let message = rx.recv();
             match message {
@@ -285,6 +287,7 @@ fn save_benchmark_readings() {
         memory_resident_set_size: status.vmrss.expect("Could not get vmrss"),
         benchmark_data_type: BenchmarkDataType::MotorMonitor,
     };
+    eprintln!("Writing benchmark data");
     let vec: Vec<u8> =
         to_allocvec_cobs(&benchmark_data).expect("Could not write benchmark data to Vec<u8>");
     let _ = std::io::stdout()

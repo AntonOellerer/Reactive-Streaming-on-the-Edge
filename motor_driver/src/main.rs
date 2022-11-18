@@ -1,8 +1,9 @@
+use std::{fs, io, thread};
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::ops::Shl;
 use std::process::{Command, Stdio};
-use std::{fs, io, thread};
+use std::time::Duration;
 
 use log::{error, info};
 use postcard::to_allocvec;
@@ -11,8 +12,7 @@ use rppal::i2c::I2c;
 use serde::Deserialize;
 use threadpool::ThreadPool;
 
-use data_transfer_objects::RequestProcessingModel::ClientServer;
-use data_transfer_objects::{MotorDriverRunParameters, MotorMonitorParameters, SensorParameters};
+use data_transfer_objects::{MotorDriverRunParameters, MotorMonitorParameters, RequestProcessingModel, SensorParameters};
 
 #[derive(Deserialize)]
 struct MotorDriverParameters {
@@ -65,7 +65,7 @@ fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_drive
     );
     #[cfg(feature = "rpi")]
     setup_i2c_sensors(&motor_driver_parameters);
-    handle_motor_monitor(motor_monitor_parameters, test_driver);
+    handle_motor_monitor(motor_driver_parameters.request_processing_model, motor_monitor_parameters, test_driver);
     pool.join();
 }
 
@@ -124,17 +124,20 @@ fn setup_i2c_sensors(motor_driver_parameters: &MotorDriverRunParameters) {
     }
 }
 
-fn handle_motor_monitor(motor_monitor_parameters: MotorMonitorParameters, mut stream: TcpStream) {
+fn handle_motor_monitor(requestProcessingModel: RequestProcessingModel, motor_monitor_parameters: MotorMonitorParameters, mut stream: TcpStream) {
     println!("Running motor monitor");
+    let dir = match requestProcessingModel {
+        RequestProcessingModel::ReactiveStreaming => "../motor_monitor_rx",
+        RequestProcessingModel::ClientServer => "../motor_monitor_cs",
+    };
     let output = Command::new("cargo")
-        .current_dir("../motor_monitor_cs")
+        .current_dir(dir)
         .arg("run")
         .arg("--")
         .arg(motor_monitor_parameters.start_time.to_string())
         .arg(motor_monitor_parameters.duration.to_string())
         .arg(
-            motor_monitor_parameters
-                .request_processing_model
+            requestProcessingModel
                 .to_string(),
         )
         .arg(
@@ -212,7 +215,7 @@ fn create_sensor_parameters(
         id,
         duration: motor_driver_parameters.duration,
         sampling_interval: motor_driver_parameters.sampling_interval,
-        request_processing_model: ClientServer,
+        request_processing_model: RequestProcessingModel::ClientServer,
         motor_monitor_port: port,
     }
 }
