@@ -85,7 +85,7 @@ fn main() -> ! {
         let start_instant = fugit::TimerInstantU32::<1_000_000>::from_ticks(0);
         let mut rng = SmallRng::seed_from_u64(sensor_parameters.id as u64);
         let mut message_buffer = [0u8; 32];
-        while start_instant.duration_since_epoch().to_secs() < sensor_parameters.duration {
+        while start_instant.duration_since_epoch().to_secs() < sensor_parameters.duration as u32 {
             let sensor_reading: f32 = SENSOR_READINGS
                 .lines()
                 .choose_stable(&mut rng)

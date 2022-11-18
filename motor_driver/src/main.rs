@@ -1,9 +1,9 @@
-use std::{fs, io, thread};
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::ops::Shl;
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use std::{fs, io, thread};
 
 use log::{error, info};
 use postcard::to_allocvec;
@@ -12,7 +12,9 @@ use rppal::i2c::I2c;
 use serde::Deserialize;
 use threadpool::ThreadPool;
 
-use data_transfer_objects::{MotorDriverRunParameters, MotorMonitorParameters, RequestProcessingModel, SensorParameters};
+use data_transfer_objects::{
+    MotorDriverRunParameters, MotorMonitorParameters, RequestProcessingModel, SensorParameters,
+};
 
 #[derive(Deserialize)]
 struct MotorDriverParameters {
@@ -65,7 +67,11 @@ fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_drive
     );
     #[cfg(feature = "rpi")]
     setup_i2c_sensors(&motor_driver_parameters);
-    handle_motor_monitor(motor_driver_parameters.request_processing_model, motor_monitor_parameters, test_driver);
+    handle_motor_monitor(
+        motor_driver_parameters.request_processing_model,
+        motor_monitor_parameters,
+        test_driver,
+    );
     pool.join();
 }
 
@@ -124,9 +130,13 @@ fn setup_i2c_sensors(motor_driver_parameters: &MotorDriverRunParameters) {
     }
 }
 
-fn handle_motor_monitor(requestProcessingModel: RequestProcessingModel, motor_monitor_parameters: MotorMonitorParameters, mut stream: TcpStream) {
+fn handle_motor_monitor(
+    request_processing_model: RequestProcessingModel,
+    motor_monitor_parameters: MotorMonitorParameters,
+    mut stream: TcpStream,
+) {
     println!("Running motor monitor");
-    let dir = match requestProcessingModel {
+    let dir = match request_processing_model {
         RequestProcessingModel::ReactiveStreaming => "../motor_monitor_rx",
         RequestProcessingModel::ClientServer => "../motor_monitor_cs",
     };
@@ -136,10 +146,7 @@ fn handle_motor_monitor(requestProcessingModel: RequestProcessingModel, motor_mo
         .arg("--")
         .arg(motor_monitor_parameters.start_time.to_string())
         .arg(motor_monitor_parameters.duration.to_string())
-        .arg(
-            requestProcessingModel
-                .to_string(),
-        )
+        .arg(request_processing_model.to_string())
         .arg(
             motor_monitor_parameters
                 .number_of_tcp_motor_groups
@@ -178,8 +185,8 @@ fn control_sensor(
         Ok(mut sensor_stream) => {
             write_sensor_parameters(&sensor_parameters, &mut sensor_stream);
             thread::sleep(utils::get_duration_to_end(
-                motor_driver_parameters.start_time,
-                motor_driver_parameters.duration,
+                Duration::from_secs_f64(motor_driver_parameters.start_time),
+                Duration::from_secs_f64(motor_driver_parameters.duration),
             ));
             info!("Copying data {}", id);
             copy_sensor_benchmark_data(&mut sensor_stream, test_driver_stream);
@@ -199,8 +206,8 @@ fn create_motor_monitor_parameters(
         request_processing_model: motor_driver_parameters.request_processing_model,
         number_of_tcp_motor_groups: motor_driver_parameters.number_of_tcp_motor_groups,
         number_of_i2c_motor_groups: motor_driver_parameters.number_of_i2c_motor_groups,
-        window_size: motor_driver_parameters.window_size_seconds * 1000
-            / motor_driver_parameters.sampling_interval,
+        window_size: motor_driver_parameters.window_size_seconds
+            / motor_driver_parameters.sampling_interval as f64,
         sensor_port: motor_driver_parameters.sensor_port,
         cloud_server_port: motor_driver_parameters.cloud_server_port,
     }

@@ -1,15 +1,15 @@
-use libc::time_t;
+use std::time::Duration;
 
 use crate::TimedSensorMessage;
 
 #[derive(Debug)]
 pub struct SlidingWindow {
-    window_size: u32,
+    window_size: Duration,
     elements: Vec<TimedSensorMessage>,
 }
 
 impl SlidingWindow {
-    pub fn new(window_size: u32) -> SlidingWindow {
+    pub fn new(window_size: Duration) -> SlidingWindow {
         SlidingWindow {
             window_size,
             elements: Vec::new(),
@@ -29,9 +29,10 @@ impl SlidingWindow {
         reading_sum / (self.elements.len() as f64)
     }
 
-    pub fn refresh_cache(&mut self, at_time: time_t) {
-        self.elements
-            .retain(|message| message.timestamp > at_time - (self.window_size * 1000) as time_t);
+    pub fn refresh_cache(&mut self, at_time: Duration) {
+        self.elements.retain(|message| {
+            Duration::from_secs_f64(message.timestamp) > at_time - self.window_size
+        });
     }
 
     pub fn reset(&mut self) {

@@ -1,7 +1,5 @@
 #![feature(drain_filter)]
 
-use std::any::type_name;
-use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
@@ -11,8 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::executor::ThreadPool;
-use futures::AsyncWriteExt;
-use libc::time_t;
+
 use postcard::to_allocvec_cobs;
 use rxrust::prelude::SubscribeNext;
 use rxrust::prelude::*;
@@ -26,7 +23,7 @@ mod sliding_window;
 
 #[derive(Debug, Copy, Clone)]
 pub struct TimedSensorMessage {
-    pub timestamp: time_t,
+    pub timestamp: f64,
     reading: f32,
     sensor_id: u32,
 }
@@ -34,7 +31,7 @@ pub struct TimedSensorMessage {
 impl From<SensorMessage> for TimedSensorMessage {
     fn from(sensor_message: SensorMessage) -> Self {
         TimedSensorMessage {
-            timestamp: utils::get_now(),
+            timestamp: utils::get_now_secs(),
             reading: sensor_message.reading,
             sensor_id: sensor_message.sensor_id,
         }
@@ -74,7 +71,7 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
             .expect("Did not receive at least 6 arguments")
             .parse()
             .expect("Could not parse window_size successfully"),
-        start_port: arguments
+        sensor_port: arguments
             .get(7)
             .expect("Did not receive at least 7 arguments")
             .parse()
@@ -98,7 +95,7 @@ fn main() {
     execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server);
 }
 
-fn execute_reactive_streaming_procedure<'a>(
+fn execute_reactive_streaming_procedure(
     motor_monitor_parameters: &MotorMonitorParameters,
     cloud_server: &mut TcpStream,
 ) {
@@ -171,7 +168,7 @@ fn execute_reactive_streaming_procedure<'a>(
                             let now = utils::get_now_duration();
                             vec[motor_id] = now;
                             Some(Alert {
-                                time: now.as_millis() as time_t,
+                                time: now.as_secs_f64(),
                                 motor_id: motor_id as u16,
                                 failure,
                             })
@@ -189,7 +186,6 @@ fn execute_reactive_streaming_procedure<'a>(
             .expect("Could not send motor alert to cloud server");
     });
     // .subscribe(|_i| println!("Test"));
-    return;
 }
 
 fn violated_rule(value_map: &HashMap<u32, f64>, motor_age: Duration) -> Option<MotorFailure> {
@@ -215,10 +211,6 @@ fn violated_rule(value_map: &HashMap<u32, f64>, motor_age: Duration) -> Option<M
     } else {
         None
     }
-}
-
-fn type_of<T>(_: T) -> &'static str {
-    type_name::<T>()
 }
 
 fn get_motor_id(sensor_id: u32) -> u32 {

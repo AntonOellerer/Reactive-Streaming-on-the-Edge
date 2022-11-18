@@ -81,17 +81,16 @@ macro_rules! new_sliding_window_observer {
 
         let handler = $scheduler.schedule_repeating(
             move |_| {
-                eprintln!("Scanning {:?}", utils::get_now());
+                eprintln!("Scanning {:?}", utils::get_now_secs());
                 let buffer = &mut *buffer_c.rc_deref_mut();
                 if !buffer.is_empty() {
                     buffer.drain_filter(|message| {
                         eprintln!(
                             "{:?} vs {:?}",
                             $time_function(*message) + $window_size,
-                            Duration::from_millis(utils::get_now() as u64)
+                            utils::get_now_duration()
                         );
-                        $time_function(*message) + $window_size
-                            < Duration::from_millis(utils::get_now() as u64)
+                        $time_function(*message) + $window_size < utils::get_now_duration()
                     });
                     eprintln!("Pushing {:?} elements", buffer.len());
                     let copied_buffer = buffer.iter().map(|message| *message).collect();

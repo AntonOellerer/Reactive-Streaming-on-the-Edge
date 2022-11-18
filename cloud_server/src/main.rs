@@ -1,6 +1,7 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
+use std::time::Duration;
 use std::{fs, thread};
 
 use log::{error, info};
@@ -40,8 +41,8 @@ fn main() {
                     execute_new_run(run_parameters.motor_monitor_port);
                 });
                 thread::sleep(utils::get_duration_to_end(
-                    run_parameters.start_time,
-                    run_parameters.duration,
+                    Duration::from_secs_f64(run_parameters.start_time),
+                    Duration::from_secs_f64(run_parameters.duration),
                 ));
                 info!("Dropping handle");
                 drop(thread_handle);

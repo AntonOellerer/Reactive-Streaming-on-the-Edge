@@ -6,8 +6,6 @@ use std::fmt::Formatter;
 #[cfg(feature = "std")]
 use std::str::FromStr;
 
-#[cfg(feature = "std")]
-use libc::time_t;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Copy, Clone)]
@@ -75,7 +73,7 @@ impl FromStr for MotorFailure {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SensorParameters {
     pub id: u32,
-    pub duration: u32,
+    pub duration: f64,
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
     pub motor_monitor_port: u16,
@@ -124,12 +122,12 @@ pub struct SensorMessage {
 #[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct MotorMonitorParameters {
-    pub start_time: time_t,
-    pub duration: u32,
+    pub start_time: f64,
+    pub duration: f64,
     pub request_processing_model: RequestProcessingModel,
     pub number_of_tcp_motor_groups: usize,
     pub number_of_i2c_motor_groups: u8,
-    pub window_size: u32,
+    pub window_size: f64,
     pub sensor_port: u16,
     pub cloud_server_port: u16,
 }
@@ -137,11 +135,11 @@ pub struct MotorMonitorParameters {
 #[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct MotorDriverRunParameters {
-    pub start_time: time_t,
-    pub duration: u32,
+    pub start_time: f64,
+    pub duration: f64,
     pub number_of_tcp_motor_groups: usize,
     pub number_of_i2c_motor_groups: u8,
-    pub window_size_seconds: u32,
+    pub window_size_seconds: f64,
     pub sensor_port: u16,
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
@@ -152,7 +150,7 @@ pub struct MotorDriverRunParameters {
 #[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Alert {
-    pub time: time_t,
+    pub time: f64,
     pub motor_id: u16,
     pub failure: MotorFailure,
 }
@@ -167,7 +165,7 @@ impl Alert {
         let values: Vec<&str> = csv_line.split(',').collect();
         Alert {
             motor_id: u16::from_str(values[0]).expect("Could not parse motor id"),
-            time: time_t::from_str(values[1]).expect("Could not parse time"),
+            time: f64::from_str(values[1]).expect("Could not parse time"),
             failure: MotorFailure::from_str(values[2]).expect("Could not parse MotorFailure"),
         }
     }
@@ -176,8 +174,8 @@ impl Alert {
 #[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CloudServerRunParameters {
-    pub start_time: time_t,
-    pub duration: u32,
+    pub start_time: f64,
+    pub duration: f64,
     pub motor_monitor_port: u16,
     pub request_processing_model: RequestProcessingModel,
 }

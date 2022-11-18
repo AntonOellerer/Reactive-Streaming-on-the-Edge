@@ -1,16 +1,15 @@
 use std::io::Write;
 use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
-use std::ops::{Add, BitAnd, Shr};
 #[cfg(feature = "rpi")]
 use std::ops::Shl;
+use std::ops::{Add, BitAnd, Shr};
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use libc::time_t;
 use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 #[cfg(feature = "rpi")]
@@ -31,7 +30,7 @@ mod sliding_window;
 
 #[derive(Debug)]
 pub struct TimedSensorMessage {
-    pub timestamp: time_t,
+    pub timestamp: f64,
     reading: f32,
     _sensor_id: u32,
 }
@@ -39,7 +38,7 @@ pub struct TimedSensorMessage {
 impl From<SensorMessage> for TimedSensorMessage {
     fn from(sensor_message: SensorMessage) -> Self {
         TimedSensorMessage {
-            timestamp: utils::get_now(),
+            timestamp: utils::get_now_secs(),
             reading: sensor_message.reading,
             _sensor_id: sensor_message.sensor_id,
         }
@@ -54,8 +53,8 @@ fn main() {
 
 fn execute_client_server_procedure(motor_monitor_parameters: &MotorMonitorParameters) {
     let sleep_duration = utils::get_duration_to_end(
-        motor_monitor_parameters.start_time,
-        motor_monitor_parameters.duration,
+        Duration::from_secs_f64(motor_monitor_parameters.start_time),
+        Duration::from_secs_f64(motor_monitor_parameters.duration),
     )
     .add(Duration::from_secs(1)); //to account for all sensor messages
     let (tx, rx) = channel();
@@ -204,13 +203,13 @@ fn handle_consumer(
             + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
         let mut buffers: Vec<MotorGroupSensorsBuffers> = Vec::with_capacity(total_motors);
         for _ in 0..total_motors {
-            buffers.push(MotorGroupSensorsBuffers::new(
+            buffers.push(MotorGroupSensorsBuffers::new(Duration::from_secs_f64(
                 motor_monitor_parameters.window_size,
-            ))
+            )))
         }
-        let end_time =
-            motor_monitor_parameters.start_time + (motor_monitor_parameters.duration * 1000) as time_t;
-        while utils::get_now() < end_time {
+        let end_time = Duration::from_secs_f64(motor_monitor_parameters.start_time)
+            + Duration::from_secs_f64(motor_monitor_parameters.duration);
+        while utils::get_now_duration() < end_time {
             let message = rx.recv();
             match message {
                 Ok(message) => {
@@ -231,12 +230,12 @@ fn handle_message(
     let sensor_id = message.sensor_id.bitand(0xFFFF);
     let motor_group_buffers = get_motor_group_buffers(buffers, motor_group_id);
     add_message_to_sensor_buffer(message, sensor_id, motor_group_buffers);
-    let now = utils::get_now();
+    let now = utils::get_now_duration();
     motor_group_buffers.refresh_caches(now);
     let rule_violated = rules_engine::violated_rule(motor_group_buffers);
     if let Some(rule) = rule_violated {
         eprintln!("Found rule violation {rule} in motor {motor_group_id}");
-        let alert = create_alert(motor_group_id, now, rule);
+        let alert = create_alert(motor_group_id, now.as_secs_f64(), rule);
         let vec: Vec<u8> =
             to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
         cloud_server
@@ -265,7 +264,7 @@ fn get_motor_group_buffers(
         .expect("Motor group id did not match to a motor group buffer")
 }
 
-fn create_alert(motor_group_id: u32, now: time_t, rule: MotorFailure) -> Alert {
+fn create_alert(motor_group_id: u32, now: f64, rule: MotorFailure) -> Alert {
     Alert {
         time: now,
         motor_id: motor_group_id as u16,

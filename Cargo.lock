@@ -290,7 +290,6 @@ version = "0.1.0"
 dependencies = [
  "data_transfer_objects",
  "env_logger",
- "libc",
  "log",
  "postcard",
  "serde",
@@ -404,7 +403,6 @@ dependencies = [
 name = "data_transfer_objects"
 version = "0.1.0"
 dependencies = [
- "libc",
  "serde",
 ]
 
@@ -787,7 +785,7 @@ dependencies = [
  "env_logger",
  "log",
  "postcard",
- "rppal 0.13.1",
+ "rppal",
  "serde",
  "threadpool",
  "toml",
@@ -799,10 +797,9 @@ name = "motor_monitor"
 version = "0.1.0"
 dependencies = [
  "data_transfer_objects",
- "libc",
  "postcard",
  "procfs",
- "rppal 0.13.1",
+ "rppal",
  "threadpool",
  "utils",
 ]
@@ -813,10 +810,9 @@ version = "0.1.0"
 dependencies = [
  "data_transfer_objects",
  "futures",
- "libc",
  "postcard",
  "procfs",
- "rppal 0.14.0",
+ "rppal",
  "rxrust",
  "threadpool",
  "utils",
@@ -1196,16 +1192,6 @@ dependencies = [
 
 [[package]]
 name = "rppal"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c88c9c6248de4d337747b619d8f671055ef48a87dc21b97998833f189a0bbd4f"
-dependencies = [
- "lazy_static",
- "libc",
-]
-
-[[package]]
-name = "rppal"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5900fcc67cad69c619ec872c685ca80181eae325ea425c4bd7adb4406dab4"
@@ -1417,7 +1403,6 @@ dependencies = [
  "clap",
  "data_transfer_objects",
  "env_logger",
- "libc",
  "log",
  "postcard",
  "rand",

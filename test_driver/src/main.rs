@@ -3,12 +3,12 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::str;
 use std::str::FromStr;
-use std::{fs, thread};
 use std::time::Duration;
+use std::{fs, thread};
 
 use clap::builder::TypedValueParser;
 use clap::Parser;
-use libc::time_t;
+
 use log::{debug, info};
 use postcard::to_allocvec_cobs;
 use serde::Deserialize;
@@ -51,13 +51,13 @@ struct Config {
 
 #[derive(Deserialize)]
 struct TestRunConfig {
-    start_delay: u16,
-    duration: u32,
+    start_delay: u64,
+    duration: u64,
 }
 
 #[derive(Deserialize)]
 struct MotorMonitorConfig {
-    window_size_seconds: u32,
+    window_size_seconds: u64,
     sensor_port: u16,
 }
 
@@ -75,7 +75,7 @@ struct CloudServerConfig {
 
 #[derive(Deserialize)]
 struct ValidatorConfig {
-    validation_window: u32,
+    validation_window: u64,
 }
 
 fn parse_request_processing_model(s: &str) -> RequestProcessingModel {
@@ -89,24 +89,25 @@ fn main() {
         &fs::read_to_string("resources/config.toml").expect("Could not read config file"),
     )
     .expect("Could not parse config file");
-    let start_time = utils::get_now_duration() + Duration::from_secs(config.test_run.start_delay as u64);
+    let start_time = utils::get_now_duration() + Duration::from_secs(config.test_run.start_delay);
     let mut motor_driver_connection = connect_to_driver(config.motor_driver.test_driver_port);
     let mut cloud_server_connection = connect_to_driver(config.cloud_server.test_driver_port);
-    let motor_driver_parameters = create_motor_driver_parameters(&args, &config, start_time.as_millis() as time_t);
+    let motor_driver_parameters =
+        create_motor_driver_parameters(&args, &config, start_time.as_secs_f64());
     let cloud_server_parameters: CloudServerRunParameters =
-        create_cloud_server_parameters(&args, &config, start_time.as_millis() as time_t);
+        create_cloud_server_parameters(&args, &config, start_time.as_secs_f64());
     send_motor_driver_parameters(motor_driver_parameters, &mut motor_driver_connection);
     send_cloud_server_parameters(cloud_server_parameters, &mut cloud_server_connection);
     thread::sleep(utils::get_duration_to_end(
-        start_time.as_millis() as time_t,
-        config.test_run.duration,
+        start_time,
+        Duration::from_secs(config.test_run.duration),
     ));
     info!("Saving benchmark results");
     save_benchmark_results(args.motor_groups_tcp, &mut motor_driver_connection);
     info!("Getting alerts");
     let alerts = get_alerts(&mut cloud_server_connection);
     info!("Validating alerts");
-    validator::validate_alerts(&config, &args, start_time.as_millis() as time_t, &alerts);
+    validator::validate_alerts(&config, &args, start_time, &alerts);
 }
 
 fn connect_to_driver(port: u16) -> TcpStream {
@@ -117,14 +118,15 @@ fn connect_to_driver(port: u16) -> TcpStream {
 fn create_motor_driver_parameters(
     args: &Args,
     config: &Config,
-    start_time: time_t,
+    start_time: f64,
 ) -> MotorDriverRunParameters {
     MotorDriverRunParameters {
         start_time,
-        duration: config.test_run.duration,
+        duration: Duration::from_secs(config.test_run.duration).as_secs_f64(),
         number_of_tcp_motor_groups: args.motor_groups_tcp as usize,
         number_of_i2c_motor_groups: args.motor_groups_i2c,
-        window_size_seconds: config.motor_monitor.window_size_seconds,
+        window_size_seconds: Duration::from_secs(config.motor_monitor.window_size_seconds)
+            .as_secs_f64(),
         sensor_port: config.motor_monitor.sensor_port,
         sampling_interval: args.sampling_interval,
         request_processing_model: args.request_processing_model,
@@ -148,11 +150,11 @@ fn send_motor_driver_parameters(
 fn create_cloud_server_parameters(
     args: &Args,
     config: &Config,
-    start_time: time_t,
+    start_time: f64,
 ) -> CloudServerRunParameters {
     CloudServerRunParameters {
         start_time,
-        duration: config.test_run.duration,
+        duration: Duration::from_secs(config.test_run.duration).as_secs_f64(),
         motor_monitor_port: config.cloud_server.motor_monitor_port,
         request_processing_model: args.request_processing_model,
     }

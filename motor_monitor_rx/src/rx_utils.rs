@@ -129,7 +129,7 @@ mod tests {
             std::thread::sleep(sleep);
             subscriber.complete();
         })
-        .map(|i| (i, Duration::from_millis(utils::get_now() as u64)))
+        .map(|i| (i, utils::get_now_duration()))
         .sliding_window(Duration::from_millis(210), |(_, duration)| duration, pool)
         .map(|window| window.iter().map(|(i, _)| *i).collect::<Vec<i32>>())
         .into_shared()
@@ -168,7 +168,7 @@ mod tests {
             subscriber.next(4);
             subscriber.error(());
         })
-        .map(|i| (i, Duration::from_millis(utils::get_now() as u64)))
+        .map(|i| (i, utils::get_now_duration()))
         .sliding_window(Duration::from_millis(210), |(_, duration)| duration, pool)
         .map(|window| window.iter().map(|(i, _)| *i).collect::<Vec<i32>>())
         .into_shared()
