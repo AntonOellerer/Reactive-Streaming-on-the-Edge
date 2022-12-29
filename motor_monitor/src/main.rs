@@ -55,12 +55,12 @@ fn main() {
     )
     .add(Duration::from_secs(1)); //to account for all sensor messages
     let (tx, rx) = channel();
-    let pool = ThreadPool::new(8);
-    setup_sensor_handlers(&motor_monitor_parameters, tx, &pool);
+    let sensor_listener =
+        thread::spawn(move || setup_sensor_handlers(motor_monitor_parameters, tx));
     let consumer_thread = handle_consumer(rx, motor_monitor_parameters);
     thread::sleep(sleep_duration);
     save_benchmark_readings();
-    drop(pool);
+    drop(sensor_listener);
     drop(consumer_thread);
 }
 
@@ -97,7 +97,7 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
             .expect("Did not receive at least 6 arguments")
             .parse()
             .expect("Could not parse window_size successfully"),
-        start_port: arguments
+        sensor_port: arguments
             .get(7)
             .expect("Did not receive at least 7 arguments")
             .parse()
@@ -110,14 +110,11 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
     }
 }
 
-fn setup_sensor_handlers(
-    args: &MotorMonitorParameters,
-    tx: Sender<SensorMessage>,
-    pool: &ThreadPool,
-) {
-    setup_tcp_sensor_handlers(args, tx.clone(), pool);
+fn setup_sensor_handlers(args: MotorMonitorParameters, tx: Sender<SensorMessage>) {
+    let pool = ThreadPool::new(8); //TODO
+    setup_tcp_sensor_handlers(&args, tx.clone(), &pool);
     #[cfg(feature = "rpi")]
-    setup_i2c_sensor_handlers(args, tx, pool);
+    setup_i2c_sensor_handlers(&args, tx, &pool);
 }
 
 fn setup_tcp_sensor_handlers(
@@ -125,20 +122,19 @@ fn setup_tcp_sensor_handlers(
     tx: Sender<SensorMessage>,
     pool: &ThreadPool,
 ) {
-    for port in args.start_port..args.start_port + args.number_of_tcp_motor_groups as u16 * 4 {
+    let port = args.sensor_port;
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
+        .unwrap_or_else(|_| panic!("Could not bind sensor data listener to {port}"));
+    for stream in listener.incoming() {
         let tx = tx.clone();
         pool.execute(move || {
-            let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
-                .unwrap_or_else(|_| panic!("Could not bind sensor data listener to {port}"));
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(mut stream) => loop {
-                        handle_sensor_message(&tx, &mut stream);
-                    },
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        /* connection failed */
-                    }
+            match stream {
+                Ok(mut stream) => loop {
+                    handle_sensor_message(&tx, &mut stream);
+                },
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    /* connection failed */
                 }
             }
         });

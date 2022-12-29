@@ -122,7 +122,7 @@ pub struct SensorMessage {
 }
 
 #[cfg(feature = "std")]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct MotorMonitorParameters {
     pub start_time: time_t,
     pub duration: u32,
@@ -130,7 +130,7 @@ pub struct MotorMonitorParameters {
     pub number_of_tcp_motor_groups: usize,
     pub number_of_i2c_motor_groups: u8,
     pub window_size: u32,
-    pub start_port: u16,
+    pub sensor_port: u16,
     pub cloud_server_port: u16,
 }
 
@@ -142,7 +142,7 @@ pub struct MotorDriverRunParameters {
     pub number_of_tcp_motor_groups: usize,
     pub number_of_i2c_motor_groups: u8,
     pub window_size_seconds: u32,
-    pub sensor_start_port: u16,
+    pub sensor_port: u16,
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
     pub cloud_server_port: u16,

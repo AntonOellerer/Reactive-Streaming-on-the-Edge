@@ -84,8 +84,7 @@ fn setup_tcp_sensors(
             let driver_port: u16 = motor_driver_parameters.sensor_driver_start_port
                 + (motor_id - no_i2c) * 5
                 + sensor_id;
-            let sensor_port: u16 =
-                motor_monitor_parameters.start_port + (motor_id - no_i2c) * 5 + sensor_id;
+            let sensor_port: u16 = motor_monitor_parameters.sensor_port;
             let mut test_driver_stream_copy =
                 test_driver.try_clone().expect("Could not clone stream");
             pool.execute(move || {
@@ -149,7 +148,7 @@ fn handle_motor_monitor(motor_monitor_parameters: MotorMonitorParameters, mut st
                 .to_string(),
         )
         .arg(motor_monitor_parameters.window_size.to_string())
-        .arg(motor_monitor_parameters.start_port.to_string())
+        .arg(motor_monitor_parameters.sensor_port.to_string())
         .arg(motor_monitor_parameters.cloud_server_port.to_string())
         .stderr(Stdio::inherit())
         // .stdout(Stdio::inherit())
@@ -199,7 +198,7 @@ fn create_motor_monitor_parameters(
         number_of_i2c_motor_groups: motor_driver_parameters.number_of_i2c_motor_groups,
         window_size: motor_driver_parameters.window_size_seconds * 1000
             / motor_driver_parameters.sampling_interval,
-        start_port: motor_driver_parameters.sensor_start_port,
+        sensor_port: motor_driver_parameters.sensor_port,
         cloud_server_port: motor_driver_parameters.cloud_server_port,
     }
 }
