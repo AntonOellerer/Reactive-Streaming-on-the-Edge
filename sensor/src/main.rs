@@ -77,7 +77,7 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
 }
 
 fn get_monitor_connection(sensor_parameters: &SensorParameters) -> TcpStream {
-    thread::sleep(Duration::from_secs(1));
+    thread::sleep(Duration::from_secs(2));
     eprintln!("Connecting to {}", sensor_parameters.motor_monitor_port);
     let address = SocketAddr::from_str(&format!(
         "127.0.0.1:{}",

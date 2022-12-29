@@ -184,10 +184,12 @@ fn control_sensor(
     match TcpStream::connect(format!("localhost:{driver_port}")) {
         Ok(mut sensor_stream) => {
             write_sensor_parameters(&sensor_parameters, &mut sensor_stream);
-            thread::sleep(utils::get_duration_to_end(
-                Duration::from_secs_f64(motor_driver_parameters.start_time),
-                Duration::from_secs_f64(motor_driver_parameters.duration),
-            ));
+            thread::sleep(
+                utils::get_duration_to_end(
+                    Duration::from_secs_f64(motor_driver_parameters.start_time),
+                    Duration::from_secs_f64(motor_driver_parameters.duration),
+                ) + Duration::from_secs(10),
+            );
             info!("Copying data {}", id);
             copy_sensor_benchmark_data(&mut sensor_stream, test_driver_stream);
         }
