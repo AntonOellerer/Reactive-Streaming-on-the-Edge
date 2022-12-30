@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
-use std::ops::{BitAnd, Shr};
+use std::ops::Shr;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -15,11 +15,6 @@ use rxrust::prelude::*;
 use data_transfer_objects::{
     Alert, MotorFailure, MotorMonitorParameters, RequestProcessingModel, SensorMessage,
 };
-
-use crate::rx_utils::HelperTrait;
-
-mod rx_utils;
-mod sliding_window;
 
 #[derive(Debug, Copy, Clone)]
 pub struct TimedSensorMessage {
@@ -145,6 +140,7 @@ fn execute_reactive_streaming_procedure(
         sensor_group
             .sliding_window(
                 Duration::from_secs(1),
+                Duration::from_millis(250),
                 |timed_sensor_message: TimedSensorMessage| {
                     Duration::from_secs_f64(timed_sensor_message.timestamp)
                 },
@@ -170,6 +166,7 @@ fn execute_reactive_streaming_procedure(
         motor_group
             .sliding_window(
                 Duration::from_secs(1),
+                Duration::from_millis(250),
                 |sensor_triple: (u32, f64, f64)| Duration::from_secs_f64(sensor_triple.2),
                 spawner_1.clone(),
             )
@@ -236,18 +233,11 @@ fn violated_rule(value_map: &HashMap<u32, f64>, motor_age: Duration) -> Option<M
 fn get_motor_id(sensor_id: u32) -> u32 {
     sensor_id.shr(u32::BITS / 2)
 }
-
-fn get_sensor_id(sensor_id: u32) -> u32 {
-    sensor_id.bitand(0xFFFF)
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::{Error, ErrorKind};
     use std::net::TcpListener;
-    use std::sync::Arc;
 
-    use futures::executor::LocalPool;
     use rxrust::prelude::*;
 
     use data_transfer_objects::SensorMessage;

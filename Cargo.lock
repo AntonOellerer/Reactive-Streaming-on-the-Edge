@@ -1225,7 +1225,7 @@ dependencies = [
 [[package]]
 name = "rxrust"
 version = "1.0.0-alpha.4"
-source = "git+https://github.com/rxRust/rxRust?rev=refs/pull/202/head#6a181345c6541c28b8610cf469ba61ad305600c9"
+source = "git+https://github.com/rxRust/rxRust?rev=refs/pull/207/head#b03900586b6f1ffcee8007bb4af457f220c13bd4"
 dependencies = [
  "async-std",
  "fluvio-wasm-timer",
