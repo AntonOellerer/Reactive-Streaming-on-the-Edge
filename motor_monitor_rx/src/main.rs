@@ -1,16 +1,14 @@
 #![feature(drain_filter)]
 
 use std::collections::HashMap;
-use std::io::Write;
 use std::net::{TcpListener, TcpStream};
-use std::ops::{BitAnd, Shl, Shr};
+use std::ops::{BitAnd, Shr};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures::executor::{LocalPool, ThreadPool};
+use futures::executor::LocalPool;
 use postcard::to_allocvec_cobs;
-use rxrust::prelude::SubscribeNext;
 use rxrust::prelude::*;
 
 use data_transfer_objects::{
@@ -110,41 +108,34 @@ fn execute_reactive_streaming_procedure(
             .map(|_| utils::get_now_duration())
             .collect(),
     ));
-    let port = motor_monitor_parameters.start_port;
+    let port = motor_monitor_parameters.sensor_port;
     create(move |subscriber| {
-        eprintln!("In create function");
-        if let Ok(listener) = TcpListener::bind(format!("127.0.0.1:{port}")) {
-            eprintln!("Bound listener on port {port}");
-            let mut stream = listener.accept().unwrap().0;
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .expect("Could not set read timeout");
-            eprintln!("Accepted Stream");
-            while let Some(sensor_message) = utils::read_object::<SensorMessage>(&mut stream) {
-                eprintln!("Read message {sensor_message:?}");
-                subscriber.next(sensor_message)
+        match TcpListener::bind(format!("127.0.0.1:{port}")) {
+            Ok(listener) => {
+                eprintln!("Bound listener on port {port}");
+                for stream in listener.incoming() {
+                    match stream {
+                        Ok(mut stream) => {
+                            stream
+                                .set_read_timeout(Some(Duration::from_secs(2)))
+                                .expect("Could not set read timeout");
+                            while let Some(sensor_message) =
+                                utils::read_object::<SensorMessage>(&mut stream)
+                            {
+                                eprintln!("Read message {sensor_message:?}");
+                                subscriber.next(sensor_message);
+                            }
+                        }
+                        Err(e) => subscriber.error(e.to_string()),
+                    }
+                }
             }
-            // for interval in 0..3 {
-            //     // let sensor_message = utils::read_object::<SensorMessage>(&mut stream).unwrap();
-            //     eprintln!("Read message");
-            //     subscriber.next(SensorMessage {
-            //         reading: 0.0,
-            //         sensor_id: interval.shl(16) as u32,
-            //     });
-            // }
-            //     drop(listener);
-        } else {
-            // subscriber.complete();
-            return;
+            Err(e) => subscriber.error(e.to_string()),
         }
-        eprintln!("Completing");
         subscriber.complete();
     })
     .map(TimedSensorMessage::from)
-    .group_by(|sensor_message: &TimedSensorMessage| {
-        eprintln!("Grouping");
-        sensor_message.sensor_id
-    })
+    .group_by(|sensor_message: &TimedSensorMessage| sensor_message.sensor_id)
     .flat_map(move |sensor_group| {
         let sensor_id = sensor_group.key;
         sensor_group
@@ -259,11 +250,14 @@ fn execute_reactive_streaming_procedure(
     // });
     // .subscribe_on(pool.spawner())
     // .into_shared()
-    .subscribe(|group| {
-        eprintln!("In subscribe");
-        // group.subscribe(|item| eprintln!("{:?}", item));
-        eprintln!("{group:?}");
-    });
+    .subscribe_err(
+        |group| {
+            eprintln!("In subscribe");
+            // group.subscribe_err(|item| eprintln!("{item:?}"), |e| eprintln!("{e:?}"));
+            eprintln!("{group:?}");
+        },
+        |e| eprintln!("{e:?}"),
+    );
 }
 
 fn violated_rule(value_map: &HashMap<u32, f64>, motor_age: Duration) -> Option<MotorFailure> {
@@ -301,6 +295,7 @@ fn get_sensor_id(sensor_id: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Error, ErrorKind};
     use std::net::TcpListener;
     use std::sync::Arc;
 
@@ -342,7 +337,6 @@ mod tests {
 
     #[test]
     fn it_groups_with_listener() {
-        //the problem might be, that each new subscription, which is done per group again, subscribes to a new instance of the subscriber -> the listener
         let obs_count = MutRc::own(0);
         observable::create(|subscriber| {
             println!("trying to subscribe");
@@ -359,6 +353,30 @@ mod tests {
                 *obs_clone.rc_deref_mut() += 1;
             });
         });
+        assert_eq!(1, *obs_count.rc_deref());
+    }
+
+    #[test]
+    fn it_forwards_errors() {
+        let obs_count = MutRc::own(0);
+        observable::create(|subscriber| {
+            subscriber.next(1);
+            subscriber.error(Error::from(ErrorKind::InvalidInput).to_string());
+            subscriber.complete();
+        })
+        .group_by(|value| *value)
+        .subscribe_err(
+            |group| {
+                let obs_clone = obs_count.clone();
+                group.subscribe_err(
+                    move |_| {
+                        *obs_clone.rc_deref_mut() += 1;
+                    },
+                    |err| eprintln!("{err:?}"),
+                );
+            },
+            |err| eprintln!("{err:?}"),
+        );
         assert_eq!(1, *obs_count.rc_deref());
     }
 }
