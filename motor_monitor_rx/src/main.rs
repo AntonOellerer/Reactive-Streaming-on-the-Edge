@@ -3,17 +3,20 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
-use std::ops::Shr;
+use std::ops::{Add, Shr};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 use futures::executor::LocalPool;
 use postcard::to_allocvec_cobs;
+use procfs::process::Process;
 use rxrust::prelude::*;
 
 use data_transfer_objects::{
-    Alert, MotorFailure, MotorMonitorParameters, RequestProcessingModel, SensorMessage,
+    Alert, BenchmarkData, BenchmarkDataType, MotorFailure, MotorMonitorParameters,
+    RequestProcessingModel, SensorMessage,
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -82,12 +85,24 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters = get_motor_monitor_parameters(&arguments);
+    let sleep_duration = utils::get_duration_to_end(
+        Duration::from_secs_f64(motor_monitor_parameters.start_time),
+        Duration::from_secs_f64(motor_monitor_parameters.duration),
+    )
+    .add(Duration::from_secs(1)); //to account for all sensor messages
     let mut cloud_server = TcpStream::connect(format!(
         "localhost:{}",
         motor_monitor_parameters.cloud_server_port
     ))
     .expect("Could not open connection to cloud server");
-    execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server);
+    let processing_thread = thread::spawn(move || {
+        execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server)
+    });
+    eprintln!("Sleeping {:?}", sleep_duration);
+    thread::sleep(sleep_duration);
+    eprintln!("Woke up");
+    save_benchmark_readings();
+    drop(processing_thread);
 }
 
 fn execute_reactive_streaming_procedure(
@@ -233,6 +248,29 @@ fn violated_rule(value_map: &HashMap<u32, f64>, motor_age: Duration) -> Option<M
 fn get_motor_id(sensor_id: u32) -> u32 {
     sensor_id.shr(u32::BITS / 2)
 }
+
+fn save_benchmark_readings() {
+    let me = Process::myself().expect("Could not get process info handle");
+    let stat = me.stat().expect("Could not get /proc/[pid]/stat info");
+    let status = me.status().expect("Could not get /proc/[pid]/status info");
+    let benchmark_data = BenchmarkData {
+        id: 0,
+        time_spent_in_kernel_mode: stat.stime,
+        time_spent_in_user_mode: stat.utime,
+        children_time_spent_in_kernel_mode: stat.cstime,
+        children_time_spent_in_user_mode: stat.cutime,
+        memory_high_water_mark: status.vmhwm.expect("Could not get vmhw"),
+        memory_resident_set_size: status.vmrss.expect("Could not get vmrss"),
+        benchmark_data_type: BenchmarkDataType::MotorMonitor,
+    };
+    let vec: Vec<u8> =
+        to_allocvec_cobs(&benchmark_data).expect("Could not write benchmark data to Vec<u8>");
+    let _ = std::io::stdout()
+        .write(&vec)
+        .expect("Could not write benchmark data bytes to stdout");
+    eprintln!("Wrote benchmark data");
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{Error, ErrorKind};
