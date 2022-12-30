@@ -1,6 +1,7 @@
 #![feature(drain_filter)]
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::ops::{BitAnd, Shr};
 use std::str::FromStr;
@@ -98,6 +99,9 @@ fn execute_reactive_streaming_procedure(
     motor_monitor_parameters: &MotorMonitorParameters,
     cloud_server: &mut TcpStream,
 ) {
+    let mut cloud_server = cloud_server
+        .try_clone()
+        .expect("Could not clone tcp stream");
     let pool = LocalPool::new();
     let spawner_0 = pool.spawner();
     let spawner_1 = pool.spawner();
@@ -191,70 +195,14 @@ fn execute_reactive_streaming_procedure(
                 })
             })
     })
-    // .flat_map(|motor_group| {
-    //     eprintln!("Hello from the flat map");
-    //     motor_group
-    //         .group_by(|sensor_message: &TimedSensorMessage| sensor_message.sensor_id)
-    //         .map(|sensor_group| {
-    //             let mut average: Option<f64> = None;
-    //             sensor_group
-    //                 .map(|sensor_message: TimedSensorMessage| {
-    //                     sensor_message.reading as f64
-    //                 })
-    //                 .average()
-    //                 .subscribe(|value| average = Some(value));
-    //             (sensor_group.key, average)
-    //         })
-    //         .filter_map(|(sensor_id, average): (Option<u32>, Option<f64>)| {
-    //             match (sensor_id, average) {
-    //                 (Some(sensor_id), Some(average)) => Some((sensor_id, average)),
-    //                 _ => None,
-    //             }
-    //         })
-    //         .group_by(|(sensor_id, _): &(u32, f64)| get_motor_id(*sensor_id))
-    //         .flat_map(|group| {
-    //             group
-    //                 //todo write object for hashmap like the buffers?
-    //                 .reduce_initial(
-    //                     (0usize, HashMap::new()),
-    //                     |(_, mut map), (motor_sensor_id, average)| {
-    //                         map.insert(get_sensor_id(motor_sensor_id), average);
-    //                         (get_motor_id(motor_sensor_id) as usize, map)
-    //                     },
-    //                 )
-    //                 .filter_map(|(motor_id, value_map)| {
-    //                     let arc = Arc::clone(&motor_ages);
-    //                     let mut vec = (*arc).lock().unwrap();
-    //                     let motor_age = vec[motor_id];
-    //                     if let Some(failure) = violated_rule(&value_map, motor_age) {
-    //                         let now = utils::get_now_duration();
-    //                         vec[motor_id] = now;
-    //                         Some(Alert {
-    //                             time: now.as_secs_f64(),
-    //                             motor_id: motor_id as u16,
-    //                             failure,
-    //                         })
-    //                     } else {
-    //                         None
-    //                     }
-    //                 })
-    //         })
-    // })
-    // .subscribe(|alert| {
-    //     eprintln!("In subscribe");
-    //     let vec: Vec<u8> =
-    //         to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
-    //     cloud_server
-    //         .write_all(&vec)
-    //         .expect("Could not send motor alert to cloud server");
-    // });
-    // .subscribe_on(pool.spawner())
-    // .into_shared()
     .subscribe_err(
-        |group| {
-            eprintln!("In subscribe");
-            // group.subscribe_err(|item| eprintln!("{item:?}"), |e| eprintln!("{e:?}"));
-            eprintln!("{group:?}");
+        move |alert| {
+            eprintln!("{alert:?}");
+            let vec: Vec<u8> =
+                to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
+            cloud_server
+                .write_all(&vec)
+                .expect("Could not send motor alert to cloud server");
         },
         |e| eprintln!("{e:?}"),
     );
