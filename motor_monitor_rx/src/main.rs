@@ -1,15 +1,14 @@
 #![feature(drain_filter)]
 
-use std::collections::HashMap;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
-use std::ops::{Add, Shr};
+use std::ops::{Add, BitAnd, Shr};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use futures::executor::LocalPool;
+use futures::executor::ThreadPoolBuilder;
 use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 use rxrust::prelude::*;
@@ -98,7 +97,7 @@ fn main() {
     let processing_thread = thread::spawn(move || {
         execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server)
     });
-    eprintln!("Sleeping {:?}", sleep_duration);
+    eprintln!("Sleeping {sleep_duration:?}");
     thread::sleep(sleep_duration);
     eprintln!("Woke up");
     save_benchmark_readings();
@@ -112,9 +111,10 @@ fn execute_reactive_streaming_procedure(
     let mut cloud_server = cloud_server
         .try_clone()
         .expect("Could not clone tcp stream");
-    let pool = LocalPool::new();
-    let spawner_0 = pool.spawner();
-    let spawner_1 = pool.spawner();
+    let pool = ThreadPoolBuilder::new().pool_size(16).create().unwrap();
+    let spawner_0 = pool.clone();
+    let spawner_1 = pool.clone();
+    let spawner_2 = pool.clone();
     let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
         + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
     let motor_ages: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(
@@ -129,16 +129,8 @@ fn execute_reactive_streaming_procedure(
                 eprintln!("Bound listener on port {port}");
                 for stream in listener.incoming() {
                     match stream {
-                        Ok(mut stream) => {
-                            stream
-                                .set_read_timeout(Some(Duration::from_secs(2)))
-                                .expect("Could not set read timeout");
-                            while let Some(sensor_message) =
-                                utils::read_object::<SensorMessage>(&mut stream)
-                            {
-                                eprintln!("Read message {sensor_message:?}");
-                                subscriber.next(sensor_message);
-                            }
+                        Ok(stream) => {
+                            subscriber.next(stream);
                         }
                         Err(e) => subscriber.error(e.to_string()),
                     }
@@ -148,67 +140,89 @@ fn execute_reactive_streaming_procedure(
         }
         subscriber.complete();
     })
+    .flat_map(move |mut stream| {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("Could not set read timeout");
+        create(move |subscriber| {
+            while let Some(sensor_message) = utils::read_object::<SensorMessage>(&mut stream) {
+                eprintln!(
+                    "Read message {sensor_message:?} at {}",
+                    utils::get_now_secs()
+                );
+                subscriber.next(sensor_message);
+            }
+        })
+        .subscribe_on(spawner_0.clone())
+    })
     .map(TimedSensorMessage::from)
-    .group_by(|sensor_message: &TimedSensorMessage| sensor_message.sensor_id)
-    .flat_map(move |sensor_group| {
-        let sensor_id = sensor_group.key;
-        sensor_group
-            .sliding_window(
-                Duration::from_secs(1),
-                Duration::from_millis(250),
-                |timed_sensor_message: TimedSensorMessage| {
-                    Duration::from_secs_f64(timed_sensor_message.timestamp)
-                },
-                spawner_0.clone(),
-            )
-            .filter(|sliding_window| !sliding_window.is_empty())
-            .map(move |sliding_window| {
-                (
-                    sensor_id,
-                    sliding_window
-                        .iter()
-                        .map(|sm: &TimedSensorMessage| sm.reading)
-                        .sum::<f32>() as f64
-                        / sliding_window.len() as f64,
-                    sliding_window.last().unwrap().timestamp,
-                )
-            })
-    })
-    .group_by(|sensor_triple| get_motor_id(sensor_triple.0))
-    .flat_map(move |motor_group| {
-        let motor_id = motor_group.key;
+    .sliding_window(
+        Duration::from_secs_f64(motor_monitor_parameters.window_size),
+        Duration::from_secs(1),
+        |timed_sensor_message: TimedSensorMessage| {
+            Duration::from_secs_f64(timed_sensor_message.timestamp)
+        },
+        spawner_1,
+    )
+    .flat_map(move |timed_sensor_messages| {
         let arc_clone = Arc::clone(&motor_ages);
-        motor_group
-            .sliding_window(
-                Duration::from_secs(1),
-                Duration::from_millis(250),
-                |sensor_triple: (u32, f64, f64)| Duration::from_secs_f64(sensor_triple.2),
-                spawner_1.clone(),
-            )
-            .filter(|sliding_window| !sliding_window.is_empty())
-            .filter_map(move |sliding_window: Vec<(u32, f64, f64)>| {
-                let map = sliding_window
-                    .iter()
-                    .fold(HashMap::new(), |mut hash_map, triple| {
-                        hash_map.insert(triple.0, triple.2);
-                        hash_map
-                    });
-                let arc = Arc::clone(&arc_clone);
-                let mut vec = (*arc).lock().unwrap();
-                let motor_age = vec[motor_id as usize];
-                violated_rule(&map, motor_age).map(|violated_rule| {
-                    let now = utils::get_now_duration();
-                    vec[motor_id as usize] = now;
-                    Alert {
-                        time: sliding_window.last().unwrap().2,
-                        motor_id: motor_id as u16,
-                        failure: violated_rule,
-                    }
-                })
+        let spawner_2 = spawner_2.clone();
+        let spawner_3 = spawner_2.clone();
+        let spawner_4 = spawner_2.clone();
+        let last_timestamp = timed_sensor_messages
+            .iter()
+            .map(|message| message.timestamp)
+            .reduce(f64::max)
+            .unwrap_or(utils::get_now_secs());
+        from_iter(timed_sensor_messages)
+            .group_by(|message| message.sensor_id)
+            .flat_map(move |sensor_messages| {
+                let sensor_id = sensor_messages.key;
+                sensor_messages
+                    .map(|message: TimedSensorMessage| message.reading as f64)
+                    .average()
+                    .map(move |sensor_average| (sensor_id, sensor_average, last_timestamp))
+                    .subscribe_on(spawner_2.clone())
             })
+            .group_by(|message_triple| get_motor_id(message_triple.0))
+            .flat_map(move |motor_group| {
+                let motor_id = motor_group.key;
+                let arc_clone = Arc::clone(&arc_clone);
+                motor_group
+                    .reduce_initial(Vec::new(), |mut hash_map, triple: (u32, f64, f64)| {
+                        hash_map.insert(get_sensor_id(triple.0) as usize, triple);
+                        hash_map
+                    })
+                    .map(move |map| {
+                        let arc = Arc::clone(&arc_clone);
+                        let mut vec = (*arc).lock().unwrap();
+                        let motor_age = vec[motor_id as usize];
+                        violated_rule(&map, motor_age).map(|violated_rule| {
+                            let now = utils::get_now_duration();
+                            vec[motor_id as usize] = now;
+                            Alert {
+                                time: map
+                                    .iter()
+                                    .map(|triple| triple.2)
+                                    .reduce(f64::max)
+                                    .unwrap_or(utils::get_now_secs()),
+                                motor_id: motor_id as u16,
+                                failure: violated_rule,
+                            }
+                        })
+                    })
+                    .subscribe_on(spawner_3.clone())
+            })
+            .on_error_map(|_| "Error occurred when processing timed sensor messages".to_string())
+            .subscribe_on(spawner_4)
     })
+    .subscribe_on(pool)
+    .into_shared()
     .subscribe_err(
         move |alert| {
+            // alert
+            //     .into_shared()
+            //     .subscribe_err(|m| eprintln!("{m:?}"), |e| eprintln!("{e:?}"));
             eprintln!("{alert:?}");
             let vec: Vec<u8> =
                 to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
@@ -220,17 +234,25 @@ fn execute_reactive_streaming_procedure(
     );
 }
 
-fn violated_rule(value_map: &HashMap<u32, f64>, motor_age: Duration) -> Option<MotorFailure> {
-    let air_temperature = *value_map
-        .get(&0)
-        .expect("No air temperature (0) in value map");
-    let process_temperature = *value_map
-        .get(&1)
-        .expect("No process temperature (1) in value map");
-    let rotational_speed = *value_map
-        .get(&2)
-        .expect("No rotational_speed (2) in value map");
-    let torque = *value_map.get(&3).expect("No torque (3) in value map");
+fn violated_rule(
+    sensor_average_readings: &[(u32, f64, f64)],
+    motor_age: Duration,
+) -> Option<MotorFailure> {
+    let air_temperature = sensor_average_readings.first();
+    let process_temperature = sensor_average_readings.get(1);
+    let rotational_speed = sensor_average_readings.get(2);
+    let torque = sensor_average_readings.get(3);
+    if air_temperature.is_none()
+        || process_temperature.is_none()
+        || rotational_speed.is_none()
+        || torque.is_none()
+    {
+        return None;
+    }
+    let air_temperature = air_temperature.unwrap().1;
+    let process_temperature = process_temperature.unwrap().1;
+    let rotational_speed = rotational_speed.unwrap().1;
+    let torque = torque.unwrap().1;
     let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
     let age = utils::get_now_duration() - motor_age;
     if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
@@ -247,6 +269,10 @@ fn violated_rule(value_map: &HashMap<u32, f64>, motor_age: Duration) -> Option<M
 
 fn get_motor_id(sensor_id: u32) -> u32 {
     sensor_id.shr(u32::BITS / 2)
+}
+
+fn get_sensor_id(sensor_id: u32) -> u32 {
+    sensor_id.bitand(0xFFFF)
 }
 
 fn save_benchmark_readings() {

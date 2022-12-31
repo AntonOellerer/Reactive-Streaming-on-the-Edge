@@ -1,6 +1,6 @@
 [test_run]
 start_delay = 2
-duration = 5
+duration = 60
 
 [motor_monitor]
 window_size_seconds = 3
