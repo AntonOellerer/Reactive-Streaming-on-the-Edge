@@ -112,6 +112,11 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
             .expect("Did not receive at least 8 arguments")
             .parse()
             .expect("Could not parse cloud_server_port successfully"),
+        sampling_interval: arguments
+            .get(9)
+            .expect("Did not receive at least 9 arguments")
+            .parse()
+            .expect("Could not parse sampling_interval successfully"),
     }
 }
 
