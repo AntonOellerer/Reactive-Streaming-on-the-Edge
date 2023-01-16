@@ -130,6 +130,7 @@ pub struct MotorMonitorParameters {
     pub window_size: f64,
     pub sensor_port: u16,
     pub cloud_server_port: u16,
+    pub sampling_interval: u32,
 }
 
 #[cfg(feature = "std")]

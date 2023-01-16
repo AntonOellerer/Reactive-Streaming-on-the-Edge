@@ -136,6 +136,11 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
             .expect("Did not receive at least 8 arguments")
             .parse()
             .expect("Could not parse cloud_server_port successfully"),
+        sampling_interval: arguments
+            .get(9)
+            .expect("Did not receive at least 9 arguments")
+            .parse()
+            .expect("Could not parse sampling_interval successfully"),
     }
 }
 
@@ -169,7 +174,7 @@ fn execute_reactive_streaming_procedure(
     let mut cloud_server = cloud_server
         .try_clone()
         .expect("Could not clone tcp stream");
-    let pool = ThreadPoolBuilder::new().pool_size(16).create().unwrap();
+    let pool = ThreadPoolBuilder::new().pool_size(64).create().unwrap();
     let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
         + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
     let motor_ages: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(
@@ -200,26 +205,25 @@ fn execute_reactive_streaming_procedure(
             .expect("Could not set read timeout");
         create(move |subscriber| {
             while let Some(sensor_message) = utils::read_object::<SensorMessage>(&mut stream) {
-                eprintln!(
-                    "Read message {sensor_message:?} at {:#?}",
-                    utils::get_now_duration()
-                );
+                // eprintln!(
+                //     "Read message {sensor_message:?} at {:#?}",
+                //     utils::get_now_duration()
+                // );
                 subscriber.next(sensor_message).unwrap();
             }
         })
     })
     .map(TimedSensorMessage::from)
     .sliding_window(
+        Duration::from_millis(motor_monitor_parameters.sampling_interval as u64),
         Duration::from_secs_f64(motor_monitor_parameters.window_size),
-        Duration::from_secs(1),
         |timed_sensor_message: &TimedSensorMessage| {
             Duration::from_secs_f64(timed_sensor_message.timestamp)
         },
     )
     .flat_map(move |timed_sensor_messages| {
         let arc_clone = Arc::clone(&motor_ages);
-        eprintln!("Messages: {timed_sensor_messages:?}");
-        // let last_timestamp = timed_sensor_messages.last().map(|message| message.timestamp).unwrap_or(utils::get_now_secs());
+        // eprintln!("Messages: {timed_sensor_messages:?}");
         from_iter(timed_sensor_messages)
             .group_by(|message: &TimedSensorMessage| message.sensor_id)
             .flat_map(move |sensor_messages| {
@@ -229,28 +233,26 @@ fn execute_reactive_streaming_procedure(
                     .average()
                     .map(move |sensor_average| {
                         let last_timestamp = utils::get_now_secs();
-                        eprintln!("{sensor_id}: {sensor_average}");
+                        // eprintln!("{sensor_id}: {sensor_average}");
                         TimedSensorMessage {
                             sensor_id,
                             reading: sensor_average,
                             timestamp: last_timestamp,
                         }
                     })
-                // .subscribe_on(spawner_2.clone())
             })
             .group_by(|sensor_message| get_motor_id(sensor_message.sensor_id))
             .flat_map(move |motor_group| {
                 let motor_id = motor_group.key;
-                let motor_id_d = motor_group.key;
                 let arc_clone = Arc::clone(&arc_clone);
                 motor_group
                     .reduce(
                         MotorData::default(),
                         move |mut sensor_data, sensor_message: TimedSensorMessage| {
-                            eprintln!(
-                                "{motor_id_d}: {}: {}",
-                                sensor_message.sensor_id, sensor_message.reading
-                            );
+                            // eprintln!(
+                            //     "{motor_id_d}: {}: {}",
+                            //     sensor_message.sensor_id, sensor_message.reading
+                            // );
                             sensor_data[get_sensor_id(sensor_message.sensor_id) as usize] =
                                 Some(sensor_message);
                             sensor_data
@@ -260,7 +262,7 @@ fn execute_reactive_streaming_procedure(
                         let arc = Arc::clone(&arc_clone);
                         let mut vec = (*arc).lock().unwrap();
                         let motor_age = vec[motor_id as usize];
-                        eprintln!("Motor data: {motor_data:?}");
+                        // eprintln!("Motor data: {motor_data:?}");
                         violated_rule(&motor_data, motor_age).map(|violated_rule| {
                             let now = utils::get_now_duration();
                             vec[motor_id as usize] = now;
@@ -273,11 +275,10 @@ fn execute_reactive_streaming_procedure(
                     })
             })
     })
+    .filter(|alert| alert.is_some())
+    .map(|alert| alert.unwrap())
     .subscribe(
         move |alert| {
-            // alert
-            //     .into_shared()
-            //     .subscribe_err(|m| eprintln!("{m:?}"), |e| eprintln!("{e:?}"));
             eprintln!("{alert:?}");
             let vec: Vec<u8> =
                 to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
@@ -306,9 +307,15 @@ fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Op
         .unwrap()
         .reading;
     let torque = sensor_average_readings.torque_data.unwrap().reading;
-    eprintln!("at: {air_temperature:?}, pt: {process_temperature:?}, rs: {rotational_speed:?}, t: {torque:?}");
     let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
     let age = utils::get_now_duration() - motor_age;
+    // eprintln!(
+    //     "{} {}",
+    //     (air_temperature - process_temperature).abs(),
+    //     rotational_speed
+    // );
+    // eprintln!("{}", torque * rotational_speed_in_rad);
+    // eprintln!("{}", age.as_secs_f64() * torque.round());
     if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
         Some(MotorFailure::HeatDissipationFailure)
     } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0

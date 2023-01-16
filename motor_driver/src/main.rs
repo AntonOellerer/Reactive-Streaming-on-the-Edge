@@ -160,6 +160,7 @@ fn handle_motor_monitor(
         .arg(motor_monitor_parameters.window_size.to_string())
         .arg(motor_monitor_parameters.sensor_port.to_string())
         .arg(motor_monitor_parameters.cloud_server_port.to_string())
+        .arg(motor_monitor_parameters.sampling_interval.to_string())
         .stderr(Stdio::inherit())
         // .stdout(Stdio::inherit())
         .output()
@@ -212,6 +213,7 @@ fn create_motor_monitor_parameters(
             / motor_driver_parameters.sampling_interval as f64,
         sensor_port: motor_driver_parameters.sensor_port,
         cloud_server_port: motor_driver_parameters.cloud_server_port,
+        sampling_interval: motor_driver_parameters.sampling_interval,
     }
 }
 
