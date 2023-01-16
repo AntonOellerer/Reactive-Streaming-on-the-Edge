@@ -1,10 +1,10 @@
 [test_run]
-start_delay = 2
-duration = 60
+start_delay = 4
 
 [motor_monitor]
 window_size_seconds = 3
 sensor_port = 9000
+sampling_interval = 1000
 
 [motor_driver]
 test_driver_port = 8000

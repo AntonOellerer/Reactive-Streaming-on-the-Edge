@@ -2,7 +2,7 @@
 
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
-use std::ops::{Add, BitAnd, Shr};
+use std::ops::{Add, BitAnd, Index, IndexMut, Shr};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -11,7 +11,10 @@ use std::time::Duration;
 use futures::executor::ThreadPoolBuilder;
 use postcard::to_allocvec_cobs;
 use procfs::process::Process;
-use rxrust::prelude::*;
+use rx_rust_mp::create::create;
+use rx_rust_mp::from_iter::from_iter;
+use rx_rust_mp::observable::Observable;
+use rx_rust_mp::observer::Observer;
 
 use data_transfer_objects::{
     Alert, BenchmarkData, BenchmarkDataType, MotorFailure, MotorMonitorParameters,
@@ -21,15 +24,70 @@ use data_transfer_objects::{
 #[derive(Debug, Copy, Clone)]
 pub struct TimedSensorMessage {
     pub timestamp: f64,
-    reading: f32,
+    reading: f64,
     sensor_id: u32,
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+struct MotorData {
+    air_temperature_data: Option<TimedSensorMessage>,
+    process_temperature_data: Option<TimedSensorMessage>,
+    rotational_speed_data: Option<TimedSensorMessage>,
+    torque_data: Option<TimedSensorMessage>,
+}
+
+impl MotorData {
+    fn contains_all_data(&self) -> bool {
+        self.air_temperature_data.is_some()
+            && self.process_temperature_data.is_some()
+            && self.rotational_speed_data.is_some()
+            && self.torque_data.is_some()
+    }
+
+    fn age(&self) -> Option<f64> {
+        vec![
+            self.air_temperature_data,
+            self.process_temperature_data,
+            self.rotational_speed_data,
+            self.torque_data,
+        ]
+        .iter()
+        .filter_map(|data| data.map(|data| data.reading))
+        .reduce(f64::max)
+    }
+}
+
+impl Index<usize> for MotorData {
+    type Output = Option<TimedSensorMessage>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match index {
+            0 => &self.air_temperature_data,
+            1 => &self.process_temperature_data,
+            2 => &self.rotational_speed_data,
+            3 => &self.torque_data,
+            _ => panic!("Invalid MotorData index"),
+        }
+    }
+}
+
+impl IndexMut<usize> for MotorData {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        match index {
+            0 => &mut self.air_temperature_data,
+            1 => &mut self.process_temperature_data,
+            2 => &mut self.rotational_speed_data,
+            3 => &mut self.torque_data,
+            _ => panic!("Invalid MotorData index"),
+        }
+    }
 }
 
 impl From<SensorMessage> for TimedSensorMessage {
     fn from(sensor_message: SensorMessage) -> Self {
         TimedSensorMessage {
             timestamp: utils::get_now_secs(),
-            reading: sensor_message.reading,
+            reading: sensor_message.reading as f64,
             sensor_id: sensor_message.sensor_id,
         }
     }
@@ -112,9 +170,6 @@ fn execute_reactive_streaming_procedure(
         .try_clone()
         .expect("Could not clone tcp stream");
     let pool = ThreadPoolBuilder::new().pool_size(16).create().unwrap();
-    let spawner_0 = pool.clone();
-    let spawner_1 = pool.clone();
-    let spawner_2 = pool.clone();
     let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
         + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
     let motor_ages: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(
@@ -123,102 +178,102 @@ fn execute_reactive_streaming_procedure(
             .collect(),
     ));
     let port = motor_monitor_parameters.sensor_port;
-    create(move |subscriber| {
-        match TcpListener::bind(format!("127.0.0.1:{port}")) {
+    create(
+        move |subscriber| match TcpListener::bind(format!("127.0.0.1:{port}")) {
             Ok(listener) => {
                 eprintln!("Bound listener on port {port}");
                 for stream in listener.incoming() {
                     match stream {
                         Ok(stream) => {
-                            subscriber.next(stream);
+                            subscriber.next(stream).unwrap();
                         }
-                        Err(e) => subscriber.error(e.to_string()),
+                        Err(e) => subscriber.error(e).unwrap(),
                     }
                 }
             }
-            Err(e) => subscriber.error(e.to_string()),
-        }
-        subscriber.complete();
-    })
-    .flat_map(move |mut stream| {
+            Err(e) => subscriber.error(e).unwrap(),
+        },
+    )
+    .flat_map(|mut stream| {
         stream
             .set_read_timeout(Some(Duration::from_secs(2)))
             .expect("Could not set read timeout");
         create(move |subscriber| {
             while let Some(sensor_message) = utils::read_object::<SensorMessage>(&mut stream) {
                 eprintln!(
-                    "Read message {sensor_message:?} at {}",
-                    utils::get_now_secs()
+                    "Read message {sensor_message:?} at {:#?}",
+                    utils::get_now_duration()
                 );
-                subscriber.next(sensor_message);
+                subscriber.next(sensor_message).unwrap();
             }
         })
-        .subscribe_on(spawner_0.clone())
     })
     .map(TimedSensorMessage::from)
     .sliding_window(
         Duration::from_secs_f64(motor_monitor_parameters.window_size),
         Duration::from_secs(1),
-        |timed_sensor_message: TimedSensorMessage| {
+        |timed_sensor_message: &TimedSensorMessage| {
             Duration::from_secs_f64(timed_sensor_message.timestamp)
         },
-        spawner_1,
     )
     .flat_map(move |timed_sensor_messages| {
         let arc_clone = Arc::clone(&motor_ages);
-        let spawner_2 = spawner_2.clone();
-        let spawner_3 = spawner_2.clone();
-        let spawner_4 = spawner_2.clone();
-        let last_timestamp = timed_sensor_messages
-            .iter()
-            .map(|message| message.timestamp)
-            .reduce(f64::max)
-            .unwrap_or(utils::get_now_secs());
+        eprintln!("Messages: {timed_sensor_messages:?}");
+        // let last_timestamp = timed_sensor_messages.last().map(|message| message.timestamp).unwrap_or(utils::get_now_secs());
         from_iter(timed_sensor_messages)
-            .group_by(|message| message.sensor_id)
+            .group_by(|message: &TimedSensorMessage| message.sensor_id)
             .flat_map(move |sensor_messages| {
                 let sensor_id = sensor_messages.key;
                 sensor_messages
-                    .map(|message: TimedSensorMessage| message.reading as f64)
+                    .map(|message: TimedSensorMessage| message.reading)
                     .average()
-                    .map(move |sensor_average| (sensor_id, sensor_average, last_timestamp))
-                    .subscribe_on(spawner_2.clone())
+                    .map(move |sensor_average| {
+                        let last_timestamp = utils::get_now_secs();
+                        eprintln!("{sensor_id}: {sensor_average}");
+                        TimedSensorMessage {
+                            sensor_id,
+                            reading: sensor_average,
+                            timestamp: last_timestamp,
+                        }
+                    })
+                // .subscribe_on(spawner_2.clone())
             })
-            .group_by(|message_triple| get_motor_id(message_triple.0))
+            .group_by(|sensor_message| get_motor_id(sensor_message.sensor_id))
             .flat_map(move |motor_group| {
                 let motor_id = motor_group.key;
+                let motor_id_d = motor_group.key;
                 let arc_clone = Arc::clone(&arc_clone);
                 motor_group
-                    .reduce_initial(Vec::new(), |mut hash_map, triple: (u32, f64, f64)| {
-                        hash_map.insert(get_sensor_id(triple.0) as usize, triple);
-                        hash_map
-                    })
-                    .map(move |map| {
+                    .reduce(
+                        MotorData::default(),
+                        move |mut sensor_data, sensor_message: TimedSensorMessage| {
+                            eprintln!(
+                                "{motor_id_d}: {}: {}",
+                                sensor_message.sensor_id, sensor_message.reading
+                            );
+                            sensor_data[get_sensor_id(sensor_message.sensor_id) as usize] =
+                                Some(sensor_message);
+                            sensor_data
+                        },
+                    )
+                    .map(move |motor_data| {
                         let arc = Arc::clone(&arc_clone);
                         let mut vec = (*arc).lock().unwrap();
                         let motor_age = vec[motor_id as usize];
-                        violated_rule(&map, motor_age).map(|violated_rule| {
+                        eprintln!("Motor data: {motor_data:?}");
+                        violated_rule(&motor_data, motor_age).map(|violated_rule| {
                             let now = utils::get_now_duration();
                             vec[motor_id as usize] = now;
                             Alert {
-                                time: map
-                                    .iter()
-                                    .map(|triple| triple.2)
-                                    .reduce(f64::max)
-                                    .unwrap_or(utils::get_now_secs()),
+                                time: motor_data.age().unwrap_or(utils::get_now_secs()),
                                 motor_id: motor_id as u16,
                                 failure: violated_rule,
                             }
                         })
                     })
-                    .subscribe_on(spawner_3.clone())
             })
-            .on_error_map(|_| "Error occurred when processing timed sensor messages".to_string())
-            .subscribe_on(spawner_4)
     })
-    .subscribe_on(pool)
-    .into_shared()
-    .subscribe_err(
+    .subscribe(
         move |alert| {
             // alert
             //     .into_shared()
@@ -230,29 +285,28 @@ fn execute_reactive_streaming_procedure(
                 .write_all(&vec)
                 .expect("Could not send motor alert to cloud server");
         },
-        |e| eprintln!("{e:?}"),
+        pool,
     );
 }
 
-fn violated_rule(
-    sensor_average_readings: &[(u32, f64, f64)],
-    motor_age: Duration,
-) -> Option<MotorFailure> {
-    let air_temperature = sensor_average_readings.first();
-    let process_temperature = sensor_average_readings.get(1);
-    let rotational_speed = sensor_average_readings.get(2);
-    let torque = sensor_average_readings.get(3);
-    if air_temperature.is_none()
-        || process_temperature.is_none()
-        || rotational_speed.is_none()
-        || torque.is_none()
-    {
+fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Option<MotorFailure> {
+    if !sensor_average_readings.contains_all_data() {
         return None;
     }
-    let air_temperature = air_temperature.unwrap().1;
-    let process_temperature = process_temperature.unwrap().1;
-    let rotational_speed = rotational_speed.unwrap().1;
-    let torque = torque.unwrap().1;
+    let air_temperature = sensor_average_readings
+        .air_temperature_data
+        .unwrap()
+        .reading;
+    let process_temperature = sensor_average_readings
+        .process_temperature_data
+        .unwrap()
+        .reading;
+    let rotational_speed = sensor_average_readings
+        .rotational_speed_data
+        .unwrap()
+        .reading;
+    let torque = sensor_average_readings.torque_data.unwrap().reading;
+    eprintln!("at: {air_temperature:?}, pt: {process_temperature:?}, rs: {rotational_speed:?}, t: {torque:?}");
     let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
     let age = utils::get_now_duration() - motor_age;
     if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
@@ -295,90 +349,4 @@ fn save_benchmark_readings() {
         .write(&vec)
         .expect("Could not write benchmark data bytes to stdout");
     eprintln!("Wrote benchmark data");
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::{Error, ErrorKind};
-    use std::net::TcpListener;
-
-    use rxrust::prelude::*;
-
-    use data_transfer_objects::SensorMessage;
-
-    use crate::TimedSensorMessage;
-
-    #[test]
-    fn it_can_group() {
-        observable::from_iter([
-            SensorMessage {
-                reading: 0.0,
-                sensor_id: 0,
-            },
-            SensorMessage {
-                reading: 4.0,
-                sensor_id: 1,
-            },
-            SensorMessage {
-                reading: 6.0,
-                sensor_id: 1,
-            },
-            SensorMessage {
-                reading: 2.0,
-                sensor_id: 0,
-            },
-        ])
-        .map(TimedSensorMessage::from)
-        .group_by(|sensor_message: &TimedSensorMessage| sensor_message.sensor_id)
-        .subscribe(|group| {
-            group
-                .reduce(|acc, sensor_message| format!("{} {}", acc, sensor_message.reading))
-                .subscribe(|result| println!("{}", result));
-        });
-    }
-
-    #[test]
-    fn it_groups_with_listener() {
-        let obs_count = MutRc::own(0);
-        observable::create(|subscriber| {
-            println!("trying to subscribe");
-            if let Ok(_) = TcpListener::bind("127.0.0.1:8080") {
-                subscriber.next(1);
-                subscriber.complete();
-            };
-        })
-        .buffer_with_count(1)
-        .group_by(|value: &Vec<i64>| value[0])
-        .subscribe(|group| {
-            let obs_clone = obs_count.clone();
-            group.subscribe(move |_| {
-                *obs_clone.rc_deref_mut() += 1;
-            });
-        });
-        assert_eq!(1, *obs_count.rc_deref());
-    }
-
-    #[test]
-    fn it_forwards_errors() {
-        let obs_count = MutRc::own(0);
-        observable::create(|subscriber| {
-            subscriber.next(1);
-            subscriber.error(Error::from(ErrorKind::InvalidInput).to_string());
-            subscriber.complete();
-        })
-        .group_by(|value| *value)
-        .subscribe_err(
-            |group| {
-                let obs_clone = obs_count.clone();
-                group.subscribe_err(
-                    move |_| {
-                        *obs_clone.rc_deref_mut() += 1;
-                    },
-                    |err| eprintln!("{err:?}"),
-                );
-            },
-            |err| eprintln!("{err:?}"),
-        );
-        assert_eq!(1, *obs_count.rc_deref());
-    }
 }

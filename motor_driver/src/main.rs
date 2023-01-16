@@ -208,7 +208,7 @@ fn create_motor_monitor_parameters(
         request_processing_model: motor_driver_parameters.request_processing_model,
         number_of_tcp_motor_groups: motor_driver_parameters.number_of_tcp_motor_groups,
         number_of_i2c_motor_groups: motor_driver_parameters.number_of_i2c_motor_groups,
-        window_size: motor_driver_parameters.window_size_seconds
+        window_size: motor_driver_parameters.window_size_seconds * 1000_f64
             / motor_driver_parameters.sampling_interval as f64,
         sensor_port: motor_driver_parameters.sensor_port,
         cloud_server_port: motor_driver_parameters.cloud_server_port,

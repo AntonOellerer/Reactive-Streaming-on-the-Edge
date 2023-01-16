@@ -32,8 +32,8 @@ struct Args {
     motor_groups_i2c: u8,
 
     /// Sensor sampling interval in milliseconds
-    #[clap(short, long, value_parser, default_value_t = 1000)]
-    sampling_interval: u32,
+    #[clap(short, long, value_parser, default_value_t = 10)]
+    duration: u64,
 
     /// Request Processing Model to use
     #[clap(value_enum, value_parser = clap::builder::PossibleValuesParser::new(["ClientServer", "ReactiveStreaming"]).map(| s | parse_request_processing_model(& s)))]
@@ -52,13 +52,13 @@ struct Config {
 #[derive(Deserialize)]
 struct TestRunConfig {
     start_delay: u64,
-    duration: u64,
 }
 
 #[derive(Deserialize)]
 struct MotorMonitorConfig {
     window_size_seconds: u64,
     sensor_port: u16,
+    sampling_interval: u32,
 }
 
 #[derive(Deserialize)]
@@ -100,7 +100,7 @@ fn main() {
     send_cloud_server_parameters(cloud_server_parameters, &mut cloud_server_connection);
     thread::sleep(utils::get_duration_to_end(
         start_time,
-        Duration::from_secs(config.test_run.duration),
+        Duration::from_secs(args.duration),
     ));
     info!("Saving benchmark results");
     save_benchmark_results(args.motor_groups_tcp, &mut motor_driver_connection);
@@ -122,13 +122,13 @@ fn create_motor_driver_parameters(
 ) -> MotorDriverRunParameters {
     MotorDriverRunParameters {
         start_time,
-        duration: Duration::from_secs(config.test_run.duration).as_secs_f64(),
+        duration: Duration::from_secs(args.duration).as_secs_f64(),
         number_of_tcp_motor_groups: args.motor_groups_tcp as usize,
         number_of_i2c_motor_groups: args.motor_groups_i2c,
         window_size_seconds: Duration::from_secs(config.motor_monitor.window_size_seconds)
             .as_secs_f64(),
         sensor_port: config.motor_monitor.sensor_port,
-        sampling_interval: args.sampling_interval,
+        sampling_interval: config.motor_monitor.sampling_interval,
         request_processing_model: args.request_processing_model,
         cloud_server_port: config.cloud_server.motor_monitor_port,
         sensor_driver_start_port: config.motor_driver.sensor_driver_port,
@@ -154,7 +154,7 @@ fn create_cloud_server_parameters(
 ) -> CloudServerRunParameters {
     CloudServerRunParameters {
         start_time,
-        duration: Duration::from_secs(config.test_run.duration).as_secs_f64(),
+        duration: Duration::from_secs(args.duration).as_secs_f64(),
         motor_monitor_port: config.cloud_server.motor_monitor_port,
         request_processing_model: args.request_processing_model,
     }

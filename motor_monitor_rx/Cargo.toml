@@ -12,7 +12,8 @@ postcard = { version = "1.0.2", features = ["alloc"] }
 threadpool = "1.8.1"
 procfs = { version = "0.14.2", default-features = false }
 rppal = { version = "0.14.1", optional = true }
-rxrust = { git = "https://github.com/AntonOellerer/rxRust" , branch = "temp/fix_sw_oem"}
+#rxrust = { git = "https://github.com/AntonOellerer/rxRust" , branch = "temp/fix_2_sw"}
+rx_rust_mp = { version = "0.4.4", git = "https://github.com/AntonOellerer/rx_rust_mp"}
 futures = "0.3.25"
 
 [features]
