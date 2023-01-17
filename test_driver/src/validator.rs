@@ -83,7 +83,7 @@ pub(crate) fn get_expected_alerts(
                 time += Duration::from_millis(config.motor_monitor.sampling_interval as u64);
             }
         }
-        alerts.append(&mut get_motor_alerts(i, buffer, window_size));
+        alerts.append(&mut get_motor_alerts(i, buffer, window_size, start_time));
     }
     alerts.sort_by_key(|alert| alert.time.round() as u64);
     alerts
@@ -93,9 +93,10 @@ fn get_motor_alerts(
     motor_id: u16,
     buffer: [Vec<(Duration, f32)>; 4],
     window_size: u64,
+    start_time: Duration,
 ) -> Vec<Alert> {
     let mut alerts = Vec::new();
-    let mut sensor_replacing_time = buffer[0][0].0;
+    let mut sensor_replacing_time = start_time;
     for i in 0..buffer[0].len() {
         let air_temperature = get_average_value(i, window_size, &buffer[0]);
         let process_temperature = get_average_value(i, window_size, &buffer[1]);
@@ -106,7 +107,7 @@ fn get_motor_alerts(
         let age = time - sensor_replacing_time;
         if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
             alerts.push(Alert {
-                time: time.as_secs_f64(),
+                time: (time - start_time).as_secs_f64(),
                 motor_id,
                 failure: MotorFailure::HeatDissipationFailure,
             });
@@ -115,14 +116,14 @@ fn get_motor_alerts(
             || torque * rotational_speed_in_rad < 3500.0
         {
             alerts.push(Alert {
-                time: time.as_secs_f64(),
+                time: (time - start_time).as_secs_f64(),
                 motor_id,
                 failure: MotorFailure::PowerFailure,
             });
             sensor_replacing_time = time;
         } else if age.as_secs_f64() * torque.round() > 10000_f64 {
             alerts.push(Alert {
-                time: time.as_secs_f64(),
+                time: (time - start_time).as_secs_f64(),
                 motor_id,
                 failure: MotorFailure::OverstrainFailure,
             });

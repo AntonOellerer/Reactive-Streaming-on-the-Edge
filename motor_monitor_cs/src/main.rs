@@ -64,9 +64,10 @@ fn execute_client_server_procedure(motor_monitor_parameters: &MotorMonitorParame
     eprintln!("Sleeping {:?}", sleep_duration);
     thread::sleep(sleep_duration);
     eprintln!("Woke up");
-    save_benchmark_readings();
     drop(sensor_listener);
     drop(consumer_thread);
+    thread::sleep(Duration::from_secs(1));
+    save_benchmark_readings();
 }
 
 fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters {
@@ -212,13 +213,13 @@ fn handle_consumer(
                 motor_monitor_parameters.window_size,
             )))
         }
-        let end_time = Duration::from_secs_f64(motor_monitor_parameters.start_time)
-            + Duration::from_secs_f64(motor_monitor_parameters.duration);
+        let start_time = Duration::from_secs_f64(motor_monitor_parameters.start_time);
+        let end_time = start_time + Duration::from_secs_f64(motor_monitor_parameters.duration);
         while utils::get_now_duration() < end_time {
             let message = rx.recv();
             match message {
                 Ok(message) => {
-                    handle_message(&mut buffers, message, &mut cloud_server);
+                    handle_message(&mut buffers, message, &mut cloud_server, start_time);
                 }
                 Err(e) => eprintln!("Error: {e}"),
             };
@@ -230,6 +231,7 @@ fn handle_message(
     buffers: &mut [MotorGroupSensorsBuffers],
     message: SensorMessage,
     cloud_server: &mut TcpStream,
+    start_time: Duration,
 ) {
     let motor_group_id: u32 = message.sensor_id.shr(u32::BITS / 2);
     let sensor_id = message.sensor_id.bitand(0xFFFF);
@@ -240,7 +242,7 @@ fn handle_message(
     let rule_violated = rules_engine::violated_rule(motor_group_buffers);
     if let Some(rule) = rule_violated {
         eprintln!("Found rule violation {rule} in motor {motor_group_id}");
-        let alert = create_alert(motor_group_id, now.as_secs_f64(), rule);
+        let alert = create_alert(motor_group_id, (now - start_time).as_secs_f64(), rule);
         let vec: Vec<u8> =
             to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
         cloud_server
