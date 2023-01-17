@@ -9,6 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 use futures::executor::ThreadPoolBuilder;
+use futures::future::RemoteHandle;
 use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 use rx_rust_mp::create::create;
@@ -42,18 +43,6 @@ impl MotorData {
             && self.process_temperature_data.is_some()
             && self.rotational_speed_data.is_some()
             && self.torque_data.is_some()
-    }
-
-    fn age(&self) -> Option<f64> {
-        vec![
-            self.air_temperature_data,
-            self.process_temperature_data,
-            self.rotational_speed_data,
-            self.torque_data,
-        ]
-        .iter()
-        .filter_map(|data| data.map(|data| data.timestamp))
-        .reduce(f64::max)
     }
 }
 
@@ -157,13 +146,11 @@ fn main() {
         motor_monitor_parameters.cloud_server_port
     ))
     .expect("Could not open connection to cloud server");
-    let processing_thread = thread::spawn(move || {
-        execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server)
-    });
+    let handle = execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server);
     eprintln!("Sleeping {sleep_duration:?}");
     thread::sleep(sleep_duration);
     eprintln!("Woke up");
-    drop(processing_thread);
+    drop(handle);
     thread::sleep(Duration::from_secs(1));
     save_benchmark_readings();
 }
@@ -171,7 +158,7 @@ fn main() {
 fn execute_reactive_streaming_procedure(
     motor_monitor_parameters: &MotorMonitorParameters,
     cloud_server: &mut TcpStream,
-) {
+) -> RemoteHandle<()> {
     let mut cloud_server = cloud_server
         .try_clone()
         .expect("Could not clone tcp stream");
@@ -293,7 +280,7 @@ fn execute_reactive_streaming_procedure(
                 .expect("Could not send motor alert to cloud server");
         },
         pool,
-    );
+    )
 }
 
 fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Option<MotorFailure> {
