@@ -52,7 +52,7 @@ impl MotorData {
             self.torque_data,
         ]
         .iter()
-        .filter_map(|data| data.map(|data| data.reading))
+        .filter_map(|data| data.map(|data| data.timestamp))
         .reduce(f64::max)
     }
 }
@@ -163,8 +163,9 @@ fn main() {
     eprintln!("Sleeping {sleep_duration:?}");
     thread::sleep(sleep_duration);
     eprintln!("Woke up");
-    save_benchmark_readings();
     drop(processing_thread);
+    thread::sleep(Duration::from_secs(1));
+    save_benchmark_readings();
 }
 
 fn execute_reactive_streaming_procedure(
@@ -182,6 +183,7 @@ fn execute_reactive_streaming_procedure(
             .map(|_| utils::get_now_duration())
             .collect(),
     ));
+    let start_time = Duration::from_secs_f64(motor_monitor_parameters.start_time);
     let port = motor_monitor_parameters.sensor_port;
     create(
         move |subscriber| match TcpListener::bind(format!("127.0.0.1:{port}")) {
@@ -249,25 +251,29 @@ fn execute_reactive_streaming_procedure(
                     .reduce(
                         MotorData::default(),
                         move |mut sensor_data, sensor_message: TimedSensorMessage| {
-                            // eprintln!(
-                            //     "{motor_id_d}: {}: {}",
-                            //     sensor_message.sensor_id, sensor_message.reading
-                            // );
                             sensor_data[get_sensor_id(sensor_message.sensor_id) as usize] =
                                 Some(sensor_message);
                             sensor_data
                         },
                     )
                     .map(move |motor_data| {
-                        let arc = Arc::clone(&arc_clone);
-                        let mut vec = (*arc).lock().unwrap();
+                        // if motor_data.contains_all_data() {
+                        //     eprintln!(
+                        //         "{motor_id}: at: {:3.2}, pt: {:3.2}, rs: {:4.2}, t: {:2.2}",
+                        //         motor_data.air_temperature_data.unwrap().reading,
+                        //         motor_data.process_temperature_data.unwrap().reading,
+                        //         motor_data.rotational_speed_data.unwrap().reading,
+                        //         motor_data.torque_data.unwrap().reading
+                        //     );
+                        // }
+                        let mut vec = arc_clone.lock().unwrap();
                         let motor_age = vec[motor_id as usize];
                         // eprintln!("Motor data: {motor_data:?}");
                         violated_rule(&motor_data, motor_age).map(|violated_rule| {
                             let now = utils::get_now_duration();
                             vec[motor_id as usize] = now;
                             Alert {
-                                time: motor_data.age().unwrap_or(utils::get_now_secs()),
+                                time: (utils::get_now_duration() - start_time).as_secs_f64(),
                                 motor_id: motor_id as u16,
                                 failure: violated_rule,
                             }
@@ -316,6 +322,13 @@ fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Op
     // );
     // eprintln!("{}", torque * rotational_speed_in_rad);
     // eprintln!("{}", age.as_secs_f64() * torque.round());
+    eprintln!(
+        "temp: {:5.2}, rs: {:5.2}, power: {:5.2}, wear: {:5.2}",
+        (air_temperature - process_temperature).abs(),
+        rotational_speed,
+        torque * rotational_speed_in_rad,
+        age.as_secs_f64() * torque.round()
+    );
     if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
         Some(MotorFailure::HeatDissipationFailure)
     } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
