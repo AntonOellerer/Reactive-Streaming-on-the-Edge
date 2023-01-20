@@ -131,6 +131,7 @@ pub struct MotorMonitorParameters {
     pub sensor_port: u16,
     pub cloud_server_port: u16,
     pub sampling_interval: u32,
+    pub thread_pool_size: usize,
 }
 
 #[cfg(feature = "std")]
@@ -146,6 +147,7 @@ pub struct MotorDriverRunParameters {
     pub request_processing_model: RequestProcessingModel,
     pub cloud_server_port: u16,
     pub sensor_driver_start_port: u16,
+    pub thread_pool_size: usize,
 }
 
 #[cfg(feature = "std")]

@@ -130,6 +130,11 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
             .expect("Did not receive at least 9 arguments")
             .parse()
             .expect("Could not parse sampling_interval successfully"),
+        thread_pool_size: arguments
+            .get(10)
+            .expect("Did not receive at least 10 arguments")
+            .parse()
+            .expect("Could not parse thread_pool_size successfully"),
     }
 }
 
@@ -162,7 +167,10 @@ fn execute_reactive_streaming_procedure(
     let mut cloud_server = cloud_server
         .try_clone()
         .expect("Could not clone tcp stream");
-    let pool = ThreadPoolBuilder::new().pool_size(64).create().unwrap();
+    let pool = ThreadPoolBuilder::new()
+        .pool_size(motor_monitor_parameters.thread_pool_size)
+        .create()
+        .unwrap();
     let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
         + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
     let motor_ages: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(
@@ -338,16 +346,38 @@ fn get_sensor_id(sensor_id: u32) -> u32 {
 
 fn save_benchmark_readings() {
     let me = Process::myself().expect("Could not get process info handle");
+    let (stime, utime) = me
+        .tasks()
+        .unwrap()
+        .flatten()
+        .map(|task| task.stat().unwrap())
+        .fold((0, 0), |(stime, utime), task_stat| {
+            (
+                stime + task_stat.cutime, //+ task_stat.cstime as u64,
+                utime + task_stat.utime,  // + task_stat.cutime as u64,
+            )
+        });
+    let (vmhwm, vmrss) = me
+        .tasks()
+        .unwrap()
+        .flatten()
+        .map(|task| task.status().unwrap())
+        .fold((0, 0), |(vmhwm, vmrss), task_status| {
+            (
+                vmhwm + task_status.vmhwm.unwrap_or(0),
+                vmrss + task_status.vmrss.unwrap_or(0),
+            )
+        });
     let stat = me.stat().expect("Could not get /proc/[pid]/stat info");
     let status = me.status().expect("Could not get /proc/[pid]/status info");
     let benchmark_data = BenchmarkData {
         id: 0,
-        time_spent_in_kernel_mode: stat.stime,
         time_spent_in_user_mode: stat.utime,
-        children_time_spent_in_kernel_mode: stat.cstime,
+        time_spent_in_kernel_mode: utime,
         children_time_spent_in_user_mode: stat.cutime,
-        memory_high_water_mark: status.vmhwm.expect("Could not get vmhw"),
-        memory_resident_set_size: status.vmrss.expect("Could not get vmrss"),
+        children_time_spent_in_kernel_mode: stime,
+        memory_high_water_mark: vmhwm + status.vmhwm.expect("Could not get vmhw"),
+        memory_resident_set_size: vmrss + status.vmrss.expect("Could not get vmrss"),
         benchmark_data_type: BenchmarkDataType::MotorMonitor,
     };
     let vec: Vec<u8> =

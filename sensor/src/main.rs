@@ -12,7 +12,6 @@ use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
-use data_transfer_objects::RequestProcessingModel::ClientServer;
 use data_transfer_objects::{
     BenchmarkData, BenchmarkDataType, RequestProcessingModel, SensorMessage, SensorParameters,
 };
@@ -24,16 +23,14 @@ fn main() {
     let sensor_parameters: SensorParameters = get_sensor_parameters(&arguments);
     let mut rng = SmallRng::seed_from_u64(sensor_parameters.id as u64);
 
-    if sensor_parameters.request_processing_model == ClientServer {
-        let stream = get_monitor_connection(&sensor_parameters);
-        execute_client_server_procedure(
-            data_path,
-            &sensor_parameters,
-            Duration::from_secs(sensor_parameters.duration as u64),
-            &mut rng,
-            stream,
-        )
-    }
+    let stream = get_monitor_connection(&sensor_parameters);
+    execute_client_server_procedure(
+        data_path,
+        &sensor_parameters,
+        Duration::from_secs(sensor_parameters.duration as u64),
+        &mut rng,
+        stream,
+    );
     save_benchmark_readings(sensor_parameters.id);
 }
 

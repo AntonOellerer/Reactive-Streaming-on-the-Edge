@@ -59,6 +59,7 @@ struct MotorMonitorConfig {
     window_size_seconds: u64,
     sensor_port: u16,
     sampling_interval: u32,
+    thread_pool_size: usize,
 }
 
 #[derive(Deserialize)]
@@ -132,6 +133,7 @@ fn create_motor_driver_parameters(
         request_processing_model: args.request_processing_model,
         cloud_server_port: config.cloud_server.motor_monitor_port,
         sensor_driver_start_port: config.motor_driver.sensor_driver_port,
+        thread_pool_size: config.motor_monitor.thread_pool_size,
     }
 }
 
