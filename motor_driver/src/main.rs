@@ -161,6 +161,7 @@ fn handle_motor_monitor(
         .arg(motor_monitor_parameters.sensor_port.to_string())
         .arg(motor_monitor_parameters.cloud_server_port.to_string())
         .arg(motor_monitor_parameters.sampling_interval.to_string())
+        .arg(motor_monitor_parameters.thread_pool_size.to_string())
         .stderr(Stdio::inherit())
         // .stdout(Stdio::inherit())
         .output()
@@ -214,6 +215,7 @@ fn create_motor_monitor_parameters(
         sensor_port: motor_driver_parameters.sensor_port,
         cloud_server_port: motor_driver_parameters.cloud_server_port,
         sampling_interval: motor_driver_parameters.sampling_interval,
+        thread_pool_size: motor_driver_parameters.thread_pool_size,
     }
 }
 
@@ -226,7 +228,7 @@ fn create_sensor_parameters(
         id,
         duration: motor_driver_parameters.duration,
         sampling_interval: motor_driver_parameters.sampling_interval,
-        request_processing_model: RequestProcessingModel::ClientServer,
+        request_processing_model: motor_driver_parameters.request_processing_model,
         motor_monitor_port: port,
     }
 }

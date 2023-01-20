@@ -59,9 +59,9 @@ fn execute_client_server_procedure(motor_monitor_parameters: &MotorMonitorParame
     .add(Duration::from_secs(1)); //to account for all sensor messages
     let (tx, rx) = channel();
     let mmpc = *motor_monitor_parameters;
-    let sensor_listener = thread::spawn(move || setup_sensor_handlers(mmpc, tx));
+    let sensor_listener = thread::spawn(move || sensor_handlers(mmpc, tx));
     let consumer_thread = handle_consumer(rx, motor_monitor_parameters);
-    eprintln!("Sleeping {:?}", sleep_duration);
+    eprintln!("Sleeping {sleep_duration:?}");
     thread::sleep(sleep_duration);
     eprintln!("Woke up");
     drop(sensor_listener);
@@ -118,11 +118,16 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
             .expect("Did not receive at least 9 arguments")
             .parse()
             .expect("Could not parse sampling_interval successfully"),
+        thread_pool_size: arguments
+            .get(10)
+            .expect("Did not receive at least 10 arguments")
+            .parse()
+            .expect("Could not parse thread_pool_size successfully"),
     }
 }
 
-fn setup_sensor_handlers(args: MotorMonitorParameters, tx: Sender<SensorMessage>) {
-    let pool = ThreadPool::new(8); //TODO
+fn sensor_handlers(args: MotorMonitorParameters, tx: Sender<SensorMessage>) {
+    let pool = ThreadPool::new(args.thread_pool_size);
     setup_tcp_sensor_handlers(&args, tx.clone(), &pool);
     #[cfg(feature = "rpi")]
     setup_i2c_sensor_handlers(&args, tx, &pool);
@@ -184,9 +189,9 @@ fn setup_i2c_sensor_handlers(
 
 fn handle_sensor_message(tx: &Sender<SensorMessage>, stream: &mut TcpStream) {
     if let Some(message) = utils::read_object::<SensorMessage>(stream) {
-        eprintln!("{:?}", message);
+        eprintln!("{message:?}");
         tx.send(message)
-            .unwrap_or_else(|e| eprintln!("Could not send sensor message successfully {}", e))
+            .unwrap_or_else(|e| eprintln!("Could not send sensor message successfully {e}"))
     }
 }
 
@@ -281,22 +286,44 @@ fn create_alert(motor_group_id: u32, now: f64, rule: MotorFailure) -> Alert {
 
 fn save_benchmark_readings() {
     let me = Process::myself().expect("Could not get process info handle");
+    let (stime, utime) = me
+        .tasks()
+        .unwrap()
+        .flatten()
+        .map(|task| task.stat().unwrap())
+        .fold((0, 0), |(stime, utime), task_stat| {
+            (
+                stime + task_stat.cutime, //+ task_stat.cstime as u64,
+                utime + task_stat.utime,  // + task_stat.cutime as u64,
+            )
+        });
+    let (vmhwm, vmrss) = me
+        .tasks()
+        .unwrap()
+        .flatten()
+        .map(|task| task.status().unwrap())
+        .fold((0, 0), |(vmhwm, vmrss), task_status| {
+            (
+                vmhwm + task_status.vmhwm.unwrap_or(0),
+                vmrss + task_status.vmrss.unwrap_or(0),
+            )
+        });
     let stat = me.stat().expect("Could not get /proc/[pid]/stat info");
     let status = me.status().expect("Could not get /proc/[pid]/status info");
     let benchmark_data = BenchmarkData {
         id: 0,
-        time_spent_in_kernel_mode: stat.stime,
         time_spent_in_user_mode: stat.utime,
-        children_time_spent_in_kernel_mode: stat.cstime,
+        time_spent_in_kernel_mode: utime,
         children_time_spent_in_user_mode: stat.cutime,
-        memory_high_water_mark: status.vmhwm.expect("Could not get vmhw"),
-        memory_resident_set_size: status.vmrss.expect("Could not get vmrss"),
+        children_time_spent_in_kernel_mode: stime,
+        memory_high_water_mark: vmhwm + status.vmhwm.expect("Could not get vmhw"),
+        memory_resident_set_size: vmrss + status.vmrss.expect("Could not get vmrss"),
         benchmark_data_type: BenchmarkDataType::MotorMonitor,
     };
-    eprintln!("Writing benchmark data");
     let vec: Vec<u8> =
         to_allocvec_cobs(&benchmark_data).expect("Could not write benchmark data to Vec<u8>");
     let _ = std::io::stdout()
         .write(&vec)
         .expect("Could not write benchmark data bytes to stdout");
+    eprintln!("Wrote benchmark data");
 }
