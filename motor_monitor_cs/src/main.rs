@@ -145,9 +145,13 @@ fn setup_tcp_sensor_handlers(
         let tx = tx.clone();
         pool.execute(move || {
             match stream {
-                Ok(mut stream) => loop {
-                    handle_sensor_message(&tx, &mut stream);
-                },
+                Ok(mut stream) => {
+                    while let Some(sensor_message) =
+                        utils::read_object::<SensorMessage>(&mut stream)
+                    {
+                        handle_sensor_message(sensor_message, &tx);
+                    }
+                }
                 Err(e) => {
                     eprintln!("Error: {e}");
                     /* connection failed */
@@ -187,12 +191,10 @@ fn setup_i2c_sensor_handlers(
     });
 }
 
-fn handle_sensor_message(tx: &Sender<SensorMessage>, stream: &mut TcpStream) {
-    if let Some(message) = utils::read_object::<SensorMessage>(stream) {
-        eprintln!("{message:?}");
-        tx.send(message)
-            .unwrap_or_else(|e| eprintln!("Could not send sensor message successfully {e}"))
-    }
+fn handle_sensor_message(message: SensorMessage, tx: &Sender<SensorMessage>) {
+    eprintln!("{message:?}");
+    tx.send(message)
+        .unwrap_or_else(|e| eprintln!("Could not send sensor message successfully {e}"))
 }
 
 fn handle_consumer(
