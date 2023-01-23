@@ -2,13 +2,14 @@
 
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
-use std::ops::{Add, BitAnd, Index, IndexMut, Shr};
+use std::ops::{BitAnd, Index, IndexMut, Shr};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
-use std::thread;
+
+use std::sync::{Arc, RwLock};
+
 use std::time::Duration;
 
-use futures::executor::ThreadPoolBuilder;
+use futures::executor::{ThreadPool, ThreadPoolBuilder};
 use futures::future::RemoteHandle;
 use postcard::to_allocvec_cobs;
 use procfs::process::Process;
@@ -141,39 +142,38 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters = get_motor_monitor_parameters(&arguments);
-    let sleep_duration = utils::get_duration_to_end(
-        Duration::from_secs_f64(motor_monitor_parameters.start_time),
-        Duration::from_secs_f64(motor_monitor_parameters.duration),
-    )
-    .add(Duration::from_secs(1)); //to account for all sensor messages
     let mut cloud_server = TcpStream::connect(format!(
         "localhost:{}",
         motor_monitor_parameters.cloud_server_port
     ))
     .expect("Could not open connection to cloud server");
-    let handle = execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server);
-    eprintln!("Sleeping {sleep_duration:?}");
-    thread::sleep(sleep_duration);
-    eprintln!("Woke up");
-    drop(handle);
-    thread::sleep(Duration::from_secs(1));
+    eprintln!("process id:{:?}", std::process::id());
+    let pool = ThreadPoolBuilder::new()
+        .pool_size(motor_monitor_parameters.thread_pool_size)
+        .create()
+        .unwrap();
+    let handle =
+        execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server, pool);
+    eprintln!("Time: {}", Process::myself().unwrap().stat().unwrap().utime);
+    futures::executor::block_on(handle);
+    eprintln!("Time: {}", Process::myself().unwrap().stat().unwrap().utime);
     save_benchmark_readings();
 }
 
 fn execute_reactive_streaming_procedure(
     motor_monitor_parameters: &MotorMonitorParameters,
     cloud_server: &mut TcpStream,
+    pool: ThreadPool,
 ) -> RemoteHandle<()> {
     let mut cloud_server = cloud_server
         .try_clone()
         .expect("Could not clone tcp stream");
-    let pool = ThreadPoolBuilder::new()
-        .pool_size(motor_monitor_parameters.thread_pool_size)
-        .create()
-        .unwrap();
     let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
         + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
-    let motor_ages: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(
+    let total_number_of_sensors = total_number_of_motors * 4;
+    //todo find a way to replace this
+    //maybe replace with rule not depending on age
+    let motor_ages: Arc<RwLock<Vec<Duration>>> = Arc::new(RwLock::new(
         (0..total_number_of_motors)
             .map(|_| utils::get_now_duration())
             .collect(),
@@ -184,9 +184,9 @@ fn execute_reactive_streaming_procedure(
         move |subscriber| match TcpListener::bind(format!("127.0.0.1:{port}")) {
             Ok(listener) => {
                 eprintln!("Bound listener on port {port}");
-                for stream in listener.incoming() {
-                    match stream {
-                        Ok(stream) => {
+                for _ in 0..total_number_of_sensors {
+                    match listener.accept() {
+                        Ok((stream, _)) => {
                             subscriber.next(stream).unwrap();
                         }
                         Err(e) => subscriber.error(e).unwrap(),
@@ -261,12 +261,15 @@ fn execute_reactive_streaming_procedure(
                         //         motor_data.torque_data.unwrap().reading
                         //     );
                         // }
-                        let mut vec = arc_clone.lock().unwrap();
+                        let vec = arc_clone.read().unwrap();
                         let motor_age = vec[motor_id as usize];
                         // eprintln!("Motor data: {motor_data:?}");
+                        drop(vec);
                         violated_rule(&motor_data, motor_age).map(|violated_rule| {
                             let now = utils::get_now_duration();
+                            let mut vec = arc_clone.write().unwrap();
                             vec[motor_id as usize] = now;
+                            drop(vec);
                             Alert {
                                 time: (utils::get_now_duration() - start_time).as_secs_f64(),
                                 motor_id: motor_id as u16,
@@ -311,19 +314,12 @@ fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Op
     let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
     let age = utils::get_now_duration() - motor_age;
     // eprintln!(
-    //     "{} {}",
+    //     "temp: {:5.2}, rs: {:5.2}, power: {:5.2}, wear: {:5.2}",
     //     (air_temperature - process_temperature).abs(),
-    //     rotational_speed
+    //     rotational_speed,
+    //     torque * rotational_speed_in_rad,
+    //     age.as_secs_f64() * torque.round()
     // );
-    // eprintln!("{}", torque * rotational_speed_in_rad);
-    // eprintln!("{}", age.as_secs_f64() * torque.round());
-    eprintln!(
-        "temp: {:5.2}, rs: {:5.2}, power: {:5.2}, wear: {:5.2}",
-        (air_temperature - process_temperature).abs(),
-        rotational_speed,
-        torque * rotational_speed_in_rad,
-        age.as_secs_f64() * torque.round()
-    );
     if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
         Some(MotorFailure::HeatDissipationFailure)
     } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
@@ -346,38 +342,24 @@ fn get_sensor_id(sensor_id: u32) -> u32 {
 
 fn save_benchmark_readings() {
     let me = Process::myself().expect("Could not get process info handle");
-    let (stime, utime) = me
+    let (cstime, cutime) = me
         .tasks()
         .unwrap()
         .flatten()
         .map(|task| task.stat().unwrap())
         .fold((0, 0), |(stime, utime), task_stat| {
-            (
-                stime + task_stat.cutime, //+ task_stat.cstime as u64,
-                utime + task_stat.utime,  // + task_stat.cutime as u64,
-            )
-        });
-    let (vmhwm, vmrss) = me
-        .tasks()
-        .unwrap()
-        .flatten()
-        .map(|task| task.status().unwrap())
-        .fold((0, 0), |(vmhwm, vmrss), task_status| {
-            (
-                vmhwm + task_status.vmhwm.unwrap_or(0),
-                vmrss + task_status.vmrss.unwrap_or(0),
-            )
+            (stime + task_stat.stime, utime + task_stat.utime)
         });
     let stat = me.stat().expect("Could not get /proc/[pid]/stat info");
     let status = me.status().expect("Could not get /proc/[pid]/status info");
     let benchmark_data = BenchmarkData {
         id: 0,
         time_spent_in_user_mode: stat.utime,
-        time_spent_in_kernel_mode: utime,
-        children_time_spent_in_user_mode: stat.cutime,
-        children_time_spent_in_kernel_mode: stime,
-        memory_high_water_mark: vmhwm + status.vmhwm.expect("Could not get vmhw"),
-        memory_resident_set_size: vmrss + status.vmrss.expect("Could not get vmrss"),
+        time_spent_in_kernel_mode: stat.stime,
+        children_time_spent_in_user_mode: cstime,
+        children_time_spent_in_kernel_mode: cutime,
+        peak_resident_set_size: status.vmhwm.expect("Could not get vmhw"),
+        peak_virtual_memory_size: status.vmpeak.expect("Could not get vmrss"),
         benchmark_data_type: BenchmarkDataType::MotorMonitor,
     };
     let vec: Vec<u8> =
