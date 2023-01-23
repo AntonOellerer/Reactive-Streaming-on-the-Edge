@@ -1,20 +1,22 @@
+use futures::executor::{ThreadPool, ThreadPoolBuilder};
+use futures::future::RemoteHandle;
+
 use std::io::Write;
+#[cfg(feature = "rpi")]
 use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
 #[cfg(feature = "rpi")]
 use std::ops::Shl;
-use std::ops::{Add, BitAnd, Shr};
+use std::ops::{BitAnd, Shr};
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::thread;
-use std::thread::JoinHandle;
 use std::time::Duration;
 
 use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 #[cfg(feature = "rpi")]
 use rppal::i2c::I2c;
-use threadpool::ThreadPool;
+use rx_rust_mp::scheduler::Scheduler;
 
 use data_transfer_objects::{
     Alert, BenchmarkData, BenchmarkDataType, MotorFailure, MotorMonitorParameters,
@@ -52,22 +54,21 @@ fn main() {
 }
 
 fn execute_client_server_procedure(motor_monitor_parameters: &MotorMonitorParameters) {
-    let sleep_duration = utils::get_duration_to_end(
-        Duration::from_secs_f64(motor_monitor_parameters.start_time),
-        Duration::from_secs_f64(motor_monitor_parameters.duration),
-    )
-    .add(Duration::from_secs(1)); //to account for all sensor messages
     let (tx, rx) = channel();
-    let mmpc = *motor_monitor_parameters;
-    let sensor_listener = thread::spawn(move || sensor_handlers(mmpc, tx));
-    let consumer_thread = handle_consumer(rx, motor_monitor_parameters);
-    eprintln!("Sleeping {sleep_duration:?}");
-    thread::sleep(sleep_duration);
-    eprintln!("Woke up");
-    drop(sensor_listener);
-    drop(consumer_thread);
-    thread::sleep(Duration::from_secs(1));
+    let pool = ThreadPoolBuilder::new()
+        .pool_size(motor_monitor_parameters.thread_pool_size)
+        .create()
+        .unwrap();
+    let mut handle_list = handle_sensors(*motor_monitor_parameters, tx, &pool);
+    handle_list.push(handle_consumer(rx, motor_monitor_parameters, &pool));
+    wait_on_complete(handle_list);
     save_benchmark_readings();
+}
+
+fn wait_on_complete(handle_list: Vec<RemoteHandle<()>>) {
+    for handle in handle_list {
+        futures::executor::block_on(handle);
+    }
 }
 
 fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters {
@@ -126,26 +127,38 @@ fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters 
     }
 }
 
-fn sensor_handlers(args: MotorMonitorParameters, tx: Sender<SensorMessage>) {
-    let pool = ThreadPool::new(args.thread_pool_size);
-    setup_tcp_sensor_handlers(&args, tx.clone(), &pool);
+fn handle_sensors(
+    args: MotorMonitorParameters,
+    tx: Sender<SensorMessage>,
+    pool: &ThreadPool,
+) -> Vec<RemoteHandle<()>> {
+    let mut handle_list = setup_tcp_sensor_handlers(&args, tx.clone(), pool);
     #[cfg(feature = "rpi")]
-    setup_i2c_sensor_handlers(&args, tx, &pool);
+    handle_list.push(setup_i2c_sensor_handlers(&args, tx, pool));
+    handle_list
 }
 
 fn setup_tcp_sensor_handlers(
-    args: &MotorMonitorParameters,
+    motor_monitor_parameters: &MotorMonitorParameters,
     tx: Sender<SensorMessage>,
     pool: &ThreadPool,
-) {
-    let port = args.sensor_port;
+) -> Vec<RemoteHandle<()>> {
+    let port = motor_monitor_parameters.sensor_port;
     let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
         .unwrap_or_else(|_| panic!("Could not bind sensor data listener to {port}"));
-    for stream in listener.incoming() {
+    let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
+        + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
+    let total_number_of_sensors = total_number_of_motors * 4;
+    let mut handle_list = vec![];
+    for _ in 0..total_number_of_sensors {
         let tx = tx.clone();
-        pool.execute(move || {
+        let stream = listener.accept();
+        let handle = pool.schedule(move || {
             match stream {
-                Ok(mut stream) => {
+                Ok((mut stream, _)) => {
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .expect("Could not set read timeout");
                     while let Some(sensor_message) =
                         utils::read_object::<SensorMessage>(&mut stream)
                     {
@@ -158,7 +171,9 @@ fn setup_tcp_sensor_handlers(
                 }
             }
         });
+        handle_list.push(handle);
     }
+    handle_list
 }
 
 #[cfg(feature = "rpi")]
@@ -166,10 +181,10 @@ fn setup_i2c_sensor_handlers(
     args: &MotorMonitorParameters,
     tx: Sender<SensorMessage>,
     pool: &ThreadPool,
-) {
+) -> RemoteHandle<()> {
     let mut i2c = I2c::new().expect("Could not instantiate i2c object");
     let number_of_motor_groups = args.number_of_i2c_motor_groups;
-    pool.execute(move || {
+    pool.schedule(move || {
         let mut data = [0u8; size_of::<SensorMessage>()];
         loop {
             for motor_id in 0..number_of_motor_groups {
@@ -188,7 +203,7 @@ fn setup_i2c_sensor_handlers(
                 }
             }
         }
-    });
+    })
 }
 
 fn handle_sensor_message(message: SensorMessage, tx: &Sender<SensorMessage>) {
@@ -200,7 +215,8 @@ fn handle_sensor_message(message: SensorMessage, tx: &Sender<SensorMessage>) {
 fn handle_consumer(
     rx: Receiver<SensorMessage>,
     motor_monitor_parameters: &MotorMonitorParameters,
-) -> JoinHandle<()> {
+    pool: &ThreadPool,
+) -> RemoteHandle<()> {
     let mut cloud_server = TcpStream::connect(format!(
         "localhost:{}",
         motor_monitor_parameters.cloud_server_port
@@ -211,7 +227,7 @@ fn handle_consumer(
         motor_monitor_parameters.cloud_server_port
     );
     let motor_monitor_parameters = *motor_monitor_parameters;
-    thread::spawn(move || {
+    pool.schedule(move || {
         let total_motors = motor_monitor_parameters.number_of_tcp_motor_groups
             + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
         let mut buffers: Vec<MotorGroupSensorsBuffers> = Vec::with_capacity(total_motors);
@@ -221,15 +237,8 @@ fn handle_consumer(
             )))
         }
         let start_time = Duration::from_secs_f64(motor_monitor_parameters.start_time);
-        let end_time = start_time + Duration::from_secs_f64(motor_monitor_parameters.duration);
-        while utils::get_now_duration() < end_time {
-            let message = rx.recv();
-            match message {
-                Ok(message) => {
-                    handle_message(&mut buffers, message, &mut cloud_server, start_time);
-                }
-                Err(e) => eprintln!("Error: {e}"),
-            };
+        while let Ok(message) = rx.recv() {
+            handle_message(&mut buffers, message, &mut cloud_server, start_time);
         }
     })
 }
@@ -288,38 +297,24 @@ fn create_alert(motor_group_id: u32, now: f64, rule: MotorFailure) -> Alert {
 
 fn save_benchmark_readings() {
     let me = Process::myself().expect("Could not get process info handle");
-    let (stime, utime) = me
+    let (cstime, cutime) = me
         .tasks()
         .unwrap()
         .flatten()
         .map(|task| task.stat().unwrap())
         .fold((0, 0), |(stime, utime), task_stat| {
-            (
-                stime + task_stat.cutime, //+ task_stat.cstime as u64,
-                utime + task_stat.utime,  // + task_stat.cutime as u64,
-            )
-        });
-    let (vmhwm, vmrss) = me
-        .tasks()
-        .unwrap()
-        .flatten()
-        .map(|task| task.status().unwrap())
-        .fold((0, 0), |(vmhwm, vmrss), task_status| {
-            (
-                vmhwm + task_status.vmhwm.unwrap_or(0),
-                vmrss + task_status.vmrss.unwrap_or(0),
-            )
+            (stime + task_stat.stime, utime + task_stat.utime)
         });
     let stat = me.stat().expect("Could not get /proc/[pid]/stat info");
     let status = me.status().expect("Could not get /proc/[pid]/status info");
     let benchmark_data = BenchmarkData {
         id: 0,
         time_spent_in_user_mode: stat.utime,
-        time_spent_in_kernel_mode: utime,
-        children_time_spent_in_user_mode: stat.cutime,
-        children_time_spent_in_kernel_mode: stime,
-        memory_high_water_mark: vmhwm + status.vmhwm.expect("Could not get vmhw"),
-        memory_resident_set_size: vmrss + status.vmrss.expect("Could not get vmrss"),
+        time_spent_in_kernel_mode: stat.stime,
+        children_time_spent_in_user_mode: cutime,
+        children_time_spent_in_kernel_mode: cstime,
+        peak_resident_set_size: status.vmhwm.expect("Could not get vmhw"),
+        peak_virtual_memory_size: status.vmpeak.expect("Could not get vmrss"),
         benchmark_data_type: BenchmarkDataType::MotorMonitor,
     };
     let vec: Vec<u8> =

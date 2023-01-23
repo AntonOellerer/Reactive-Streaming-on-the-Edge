@@ -9,12 +9,11 @@ edition = "2021"
 data_transfer_objects = { path = "../data_transfer_objects" }
 utils = { path = "../utils" }
 postcard = { version = "1.0.2", features = ["alloc"] }
-threadpool = "1.8.1"
 procfs = { version = "0.14.2", default-features = false }
 rppal = { version = "0.14.1", optional = true }
-#rxrust = { git = "https://github.com/AntonOellerer/rxRust" , branch = "temp/fix_2_sw"}
-rx_rust_mp = { version = "0.5.1", git = "https://github.com/AntonOellerer/rx_rust_mp"}
-futures = "0.3.25"
+rx_rust_mp = { tag = "0.6.1", git = "https://github.com/AntonOellerer/rx_rust_mp"}
+futures = { version = "0.3.25", features = ["thread-pool"]}
 
+gettid = "0.1.2"
 [features]
 rpi = ["dep:rppal"]

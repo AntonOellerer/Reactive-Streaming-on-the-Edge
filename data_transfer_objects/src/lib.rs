@@ -84,10 +84,10 @@ pub struct BenchmarkData {
     pub id: u32,
     pub time_spent_in_user_mode: u64,
     pub time_spent_in_kernel_mode: u64,
-    pub children_time_spent_in_user_mode: i64,
-    pub children_time_spent_in_kernel_mode: i64,
-    pub memory_high_water_mark: u64,
-    pub memory_resident_set_size: u64,
+    pub children_time_spent_in_user_mode: u64,
+    pub children_time_spent_in_kernel_mode: u64,
+    pub peak_resident_set_size: u64,
+    pub peak_virtual_memory_size: u64,
     pub benchmark_data_type: BenchmarkDataType,
 }
 
@@ -107,8 +107,8 @@ impl BenchmarkData {
             self.time_spent_in_kernel_mode,
             self.children_time_spent_in_user_mode,
             self.children_time_spent_in_kernel_mode,
-            self.memory_high_water_mark,
-            self.memory_resident_set_size
+            self.peak_resident_set_size,
+            self.peak_virtual_memory_size
         )
     }
 }

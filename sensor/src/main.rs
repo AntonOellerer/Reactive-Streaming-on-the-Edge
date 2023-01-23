@@ -133,10 +133,10 @@ fn save_benchmark_readings(id: u32) {
         id,
         time_spent_in_kernel_mode: stat.stime,
         time_spent_in_user_mode: stat.utime,
-        children_time_spent_in_kernel_mode: stat.cstime,
-        children_time_spent_in_user_mode: stat.cutime,
-        memory_high_water_mark: status.vmhwm.expect("Could not get vmhw"),
-        memory_resident_set_size: status.vmrss.expect("Could not get vmrss"),
+        children_time_spent_in_kernel_mode: stat.cstime as u64,
+        children_time_spent_in_user_mode: stat.cutime as u64,
+        peak_resident_set_size: status.vmhwm.expect("Could not get vmhw"),
+        peak_virtual_memory_size: status.vmrss.expect("Could not get vmrss"),
         benchmark_data_type: BenchmarkDataType::Sensor,
     };
     let vec: Vec<u8> =
