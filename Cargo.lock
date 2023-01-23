@@ -1363,9 +1363,10 @@ checksum = "1f6cc3adc849b5292b4075fc0d5fdcf2f24866e88e336dd27a8943090a520508"
 name = "utils"
 version = "0.1.0"
 dependencies = [
- "libc",
+ "data_transfer_objects",
  "log",
  "postcard",
+ "procfs",
  "serde",
 ]
 

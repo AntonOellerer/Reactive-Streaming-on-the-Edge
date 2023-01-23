@@ -1,14 +1,8 @@
 #![feature(drain_filter)]
 
-use std::io::Write;
-use std::net::{TcpListener, TcpStream};
-use std::ops::{BitAnd, Index, IndexMut, Shr};
-use std::str::FromStr;
-
-use std::sync::{Arc, RwLock};
-
-use std::time::Duration;
-
+use data_transfer_objects::{
+    Alert, BenchmarkDataType, MotorFailure, MotorMonitorParameters, SensorMessage,
+};
 use futures::executor::{ThreadPool, ThreadPoolBuilder};
 use futures::future::RemoteHandle;
 use postcard::to_allocvec_cobs;
@@ -17,11 +11,11 @@ use rx_rust_mp::create::create;
 use rx_rust_mp::from_iter::from_iter;
 use rx_rust_mp::observable::Observable;
 use rx_rust_mp::observer::Observer;
-
-use data_transfer_objects::{
-    Alert, BenchmarkData, BenchmarkDataType, MotorFailure, MotorMonitorParameters,
-    RequestProcessingModel, SensorMessage,
-};
+use std::io::Write;
+use std::net::{TcpListener, TcpStream};
+use std::ops::{BitAnd, Index, IndexMut, Shr};
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 #[derive(Debug, Copy, Clone)]
 pub struct TimedSensorMessage {
@@ -83,65 +77,10 @@ impl From<SensorMessage> for TimedSensorMessage {
     }
 }
 
-fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParameters {
-    MotorMonitorParameters {
-        start_time: arguments
-            .get(1)
-            .expect("Did not receive at least 2 arguments")
-            .parse()
-            .expect("Could not parse start_time successfully"),
-        duration: arguments
-            .get(2)
-            .expect("Did not receive at least 3 arguments")
-            .parse()
-            .expect("Could not parse duration successfully"),
-        request_processing_model: RequestProcessingModel::from_str(
-            arguments
-                .get(3)
-                .expect("Did not receive at least 4 arguments"),
-        )
-        .expect("Could not parse Request Processing Model successfully"),
-        number_of_tcp_motor_groups: arguments
-            .get(4)
-            .expect("Did not receive at least 5 arguments")
-            .parse()
-            .expect("Could not parse number_of_motor_groups successfully"),
-        number_of_i2c_motor_groups: arguments
-            .get(5)
-            .expect("Did not receive at least 5 arguments")
-            .parse()
-            .expect("Could not parse number_of_motor_groups successfully"),
-        window_size: arguments
-            .get(6)
-            .expect("Did not receive at least 6 arguments")
-            .parse()
-            .expect("Could not parse window_size successfully"),
-        sensor_port: arguments
-            .get(7)
-            .expect("Did not receive at least 7 arguments")
-            .parse()
-            .expect("Could not parse start_port successfully"),
-        cloud_server_port: arguments
-            .get(8)
-            .expect("Did not receive at least 8 arguments")
-            .parse()
-            .expect("Could not parse cloud_server_port successfully"),
-        sampling_interval: arguments
-            .get(9)
-            .expect("Did not receive at least 9 arguments")
-            .parse()
-            .expect("Could not parse sampling_interval successfully"),
-        thread_pool_size: arguments
-            .get(10)
-            .expect("Did not receive at least 10 arguments")
-            .parse()
-            .expect("Could not parse thread_pool_size successfully"),
-    }
-}
-
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
-    let motor_monitor_parameters: MotorMonitorParameters = get_motor_monitor_parameters(&arguments);
+    let motor_monitor_parameters: MotorMonitorParameters =
+        utils::get_motor_monitor_parameters(&arguments);
     let mut cloud_server = TcpStream::connect(format!(
         "localhost:{}",
         motor_monitor_parameters.cloud_server_port
@@ -157,7 +96,7 @@ fn main() {
     eprintln!("Time: {}", Process::myself().unwrap().stat().unwrap().utime);
     futures::executor::block_on(handle);
     eprintln!("Time: {}", Process::myself().unwrap().stat().unwrap().utime);
-    save_benchmark_readings();
+    utils::save_benchmark_readings(0, BenchmarkDataType::MotorMonitor);
 }
 
 fn execute_reactive_streaming_procedure(
@@ -338,34 +277,4 @@ fn get_motor_id(sensor_id: u32) -> u32 {
 
 fn get_sensor_id(sensor_id: u32) -> u32 {
     sensor_id.bitand(0xFFFF)
-}
-
-fn save_benchmark_readings() {
-    let me = Process::myself().expect("Could not get process info handle");
-    let (cstime, cutime) = me
-        .tasks()
-        .unwrap()
-        .flatten()
-        .map(|task| task.stat().unwrap())
-        .fold((0, 0), |(stime, utime), task_stat| {
-            (stime + task_stat.stime, utime + task_stat.utime)
-        });
-    let stat = me.stat().expect("Could not get /proc/[pid]/stat info");
-    let status = me.status().expect("Could not get /proc/[pid]/status info");
-    let benchmark_data = BenchmarkData {
-        id: 0,
-        time_spent_in_user_mode: stat.utime,
-        time_spent_in_kernel_mode: stat.stime,
-        children_time_spent_in_user_mode: cstime,
-        children_time_spent_in_kernel_mode: cutime,
-        peak_resident_set_size: status.vmhwm.expect("Could not get vmhw"),
-        peak_virtual_memory_size: status.vmpeak.expect("Could not get vmrss"),
-        benchmark_data_type: BenchmarkDataType::MotorMonitor,
-    };
-    let vec: Vec<u8> =
-        to_allocvec_cobs(&benchmark_data).expect("Could not write benchmark data to Vec<u8>");
-    let _ = std::io::stdout()
-        .write(&vec)
-        .expect("Could not write benchmark data bytes to stdout");
-    eprintln!("Wrote benchmark data");
 }
