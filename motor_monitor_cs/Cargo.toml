@@ -1,5 +1,5 @@
 [package]
-name = "motor_monitor"
+name = "motor_monitor_cs"
 version = "0.1.0"
 edition = "2021"
 

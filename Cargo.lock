@@ -780,7 +780,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "motor_monitor"
+name = "motor_monitor_cs"
 version = "0.1.0"
 dependencies = [
  "data_transfer_objects",

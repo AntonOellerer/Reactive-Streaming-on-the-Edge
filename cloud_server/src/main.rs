@@ -9,6 +9,11 @@ use serde::Deserialize;
 
 use data_transfer_objects::{Alert, CloudServerRunParameters};
 
+#[cfg(debug_assertions)]
+const CONFIG_PATH: &str = "resources/config-debug.toml";
+#[cfg(not(debug_assertions))]
+const CONFIG_PATH: &str = "resources/config-production.toml";
+
 #[derive(Deserialize)]
 struct CloudServerParameters {
     test_driver_listen_address: SocketAddr,
@@ -16,10 +21,9 @@ struct CloudServerParameters {
 
 fn main() {
     env_logger::init();
-    let cloud_server_parameters: CloudServerParameters = toml::from_str(
-        &fs::read_to_string("resources/config.toml").expect("Could not read config file"),
-    )
-    .expect("Could not parse config file");
+    let cloud_server_parameters: CloudServerParameters =
+        toml::from_str(&fs::read_to_string(CONFIG_PATH).expect("Could not read config file"))
+            .expect("Could not parse config file");
     let listener = TcpListener::bind(cloud_server_parameters.test_driver_listen_address)
         .unwrap_or_else(|_| {
             panic!(

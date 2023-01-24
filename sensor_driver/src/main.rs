@@ -39,10 +39,7 @@ fn start_new_run(mut stream: TcpStream) {
         "Running sensor {}, motor monitor listen address {}",
         sensor_parameters.id, sensor_parameters.motor_monitor_listen_address
     );
-    let output = Command::new("cargo")
-        .current_dir("../sensor")
-        .arg("run")
-        .arg("--")
+    let output = create_run_command()
         .arg(format!(
             "resources/{}.txt",
             sensor_parameters.id.bitand(0xFFFF)
@@ -59,4 +56,16 @@ fn start_new_run(mut stream: TcpStream) {
     stream
         .write_all(&output.stdout)
         .expect("Failure writing sensor stdout to TcpStream");
+}
+
+#[cfg(debug_assertions)]
+fn create_run_command() -> Command {
+    let mut command = Command::new("cargo");
+    command.current_dir("../sensor").arg("run").arg("--");
+    command
+}
+
+#[cfg(not(debug_assertions))]
+fn create_run_command() -> Command {
+    Command::new("sensor");
 }

@@ -248,25 +248,21 @@ fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Op
         .unwrap()
         .reading;
     let torque = sensor_average_readings.torque_data.unwrap().reading;
-    let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
     let age = utils::get_now_duration() - motor_age;
-    // eprintln!(
-    //     "temp: {:5.2}, rs: {:5.2}, power: {:5.2}, wear: {:5.2}",
-    //     (air_temperature - process_temperature).abs(),
-    //     rotational_speed,
-    //     torque * rotational_speed_in_rad,
-    //     age.as_secs_f64() * torque.round()
-    // );
-    if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
-        Some(MotorFailure::HeatDissipationFailure)
-    } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
-    {
-        Some(MotorFailure::PowerFailure)
-    } else if age.as_secs_f64() * torque > 11_000_f64 {
-        Some(MotorFailure::OverstrainFailure)
-    } else {
-        None
-    }
+    eprintln!(
+        "temp: {:5.2}, rs: {:5.2}, torque: {:5.2}, wear: {:5.2}",
+        (air_temperature - process_temperature).abs(),
+        rotational_speed,
+        torque,
+        age.as_secs_f64() * torque.round()
+    );
+    utils::rule_violated(
+        air_temperature,
+        process_temperature,
+        rotational_speed,
+        torque,
+        age,
+    )
 }
 
 fn get_motor_id(sensor_id: u32) -> u32 {

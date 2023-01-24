@@ -16,22 +16,26 @@ use data_transfer_objects::{
     MotorDriverRunParameters, MotorMonitorParameters, RequestProcessingModel, SensorParameters,
 };
 
+#[cfg(debug_assertions)]
+const CONFIG_PATH: &str = "resources/config-debug.toml";
+#[cfg(not(debug_assertions))]
+const CONFIG_PATH: &str = "resources/config-production.toml";
+
 #[derive(Deserialize)]
 struct MotorDriverParameters {
-    test_driver_address: SocketAddr,
+    test_driver_listen_address: SocketAddr,
 }
 
 fn main() {
     env_logger::init();
-    let motor_driver_parameters: MotorDriverParameters = toml::from_str(
-        &fs::read_to_string("resources/config.toml").expect("Could not read config file"),
-    )
-    .expect("Could not parse MotorDriverParameters from config file");
+    let motor_driver_parameters: MotorDriverParameters =
+        toml::from_str(&fs::read_to_string(CONFIG_PATH).expect("Could not read config file"))
+            .expect("Could not parse MotorDriverParameters from config file");
     info!(
         "Attempting to bind to test driver address {}",
-        motor_driver_parameters.test_driver_address
+        motor_driver_parameters.test_driver_listen_address
     );
-    let listener = TcpListener::bind(motor_driver_parameters.test_driver_address).unwrap();
+    let listener = TcpListener::bind(motor_driver_parameters.test_driver_listen_address).unwrap();
     for test_driver_stream in listener.incoming() {
         match test_driver_stream {
             Ok(mut test_driver_stream) => {
@@ -136,14 +140,7 @@ fn handle_motor_monitor(
     mut stream: TcpStream,
 ) {
     println!("Running motor monitor");
-    let dir = match request_processing_model {
-        RequestProcessingModel::ReactiveStreaming => "../motor_monitor_rx",
-        RequestProcessingModel::ClientServer => "../motor_monitor_cs",
-    };
-    let output = Command::new("cargo")
-        .current_dir(dir)
-        .arg("run")
-        .arg("--")
+    let output = create_run_command(request_processing_model)
         .arg(motor_monitor_parameters.start_time.to_string())
         .arg(motor_monitor_parameters.duration.to_string())
         .arg(request_processing_model.to_string())
@@ -200,6 +197,26 @@ fn control_sensor(
             error!("Failed to connect: {}", e);
         }
     }
+}
+
+#[cfg(debug_assertions)]
+fn create_run_command(request_processing_model: RequestProcessingModel) -> Command {
+    let dir = match request_processing_model {
+        RequestProcessingModel::ReactiveStreaming => "../motor_monitor_rx",
+        RequestProcessingModel::ClientServer => "../motor_monitor_cs",
+    };
+    let mut command = Command::new("cargo");
+    command.current_dir(dir).arg("run").arg("--");
+    command
+}
+
+#[cfg(not(debug_assertions))]
+fn create_run_command(request_processing_model: RequestProcessingModel) -> Command {
+    let command = match request_processing_model {
+        RequestProcessingModel::ReactiveStreaming => "motor_monitor_rx",
+        RequestProcessingModel::ClientServer => "motor_monitor_cs",
+    };
+    Command::new(command)
 }
 
 fn create_motor_monitor_parameters(

@@ -1,33 +1,25 @@
+use crate::Args;
+use data_transfer_objects::{Alert, MotorFailure};
+use log::{error, info};
+use rand::prelude::IteratorRandom;
+use rand::rngs::SmallRng;
+use rand::SeedableRng;
 use std::cmp::{max, min};
 use std::fs;
 use std::io::BufRead;
 use std::ops::Shl;
 use std::time::Duration;
 
-use log::{error, info};
-use rand::prelude::IteratorRandom;
-use rand::rngs::SmallRng;
-use rand::SeedableRng;
-
-use data_transfer_objects::{Alert, MotorFailure};
-
-use crate::{Args, Config};
-
-pub(crate) fn validate_alerts(
-    config: &Config,
-    args: &Args,
-    start_time: Duration,
-    alerts: &[Alert],
-) {
+pub(crate) fn validate_alerts(args: &Args, start_time: Duration, alerts: &[Alert]) {
     info!("Validating {} alerts", alerts.len());
-    let expected_alerts = get_expected_alerts(config, args, start_time);
+    let expected_alerts = get_expected_alerts(args, start_time);
     info!("Expecting {} alerts", expected_alerts.len());
     let mut erroneous_alerts: Vec<(String, &Alert)> = expected_alerts
         .iter()
         .filter(|expected_alert| {
             !alerts.iter().any(|alert| {
                 alert_equals(
-                    Duration::from_secs(config.validator.validation_window),
+                    Duration::from_secs(args.window_size_seconds),
                     expected_alert,
                     alert,
                 )
@@ -40,7 +32,7 @@ pub(crate) fn validate_alerts(
         .filter(|alert| {
             !expected_alerts.iter().any(|expected_alert| {
                 alert_equals(
-                    Duration::from_secs(config.validator.validation_window),
+                    Duration::from_secs(args.window_size_seconds),
                     expected_alert,
                     alert,
                 )
@@ -62,13 +54,8 @@ fn alert_equals(validation_window: Duration, expected_alert: &Alert, alert: &Ale
         && (expected_alert.time - alert.time).abs() <= validation_window.as_secs_f64()
 }
 
-pub(crate) fn get_expected_alerts(
-    config: &Config,
-    args: &Args,
-    start_time: Duration,
-) -> Vec<Alert> {
-    let window_size = config.motor_monitor.window_size_seconds * 1000
-        / config.motor_monitor.sampling_interval as u64;
+pub(crate) fn get_expected_alerts(args: &Args, start_time: Duration) -> Vec<Alert> {
+    let window_size = args.window_size_seconds * 1000 / args.sampling_interval as u64;
     let mut alerts: Vec<Alert> = Vec::new();
     for i in 0..args.motor_groups_i2c as u16 + args.motor_groups_tcp {
         let mut buffer: [Vec<(Duration, f32)>; 4] =
@@ -80,7 +67,7 @@ pub(crate) fn get_expected_alerts(
             while time < start_time + Duration::from_secs(args.duration) {
                 let sensor_reading = get_sensor_reading(&mut rng, j);
                 buffer[j as usize].push((time, sensor_reading));
-                time += Duration::from_millis(config.motor_monitor.sampling_interval as u64);
+                time += Duration::from_millis(args.sampling_interval as u64);
             }
         }
         alerts.append(&mut get_motor_alerts(i, buffer, window_size, start_time));

@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  monitor:
+    build: motor_driver
+    ports:
+      - "8000:8000"
+  cloud_server:
+    build: cloud_server
+    ports:
+      - "8001:8001"

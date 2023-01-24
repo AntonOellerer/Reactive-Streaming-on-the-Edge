@@ -21,20 +21,16 @@ pub fn violated_rule(motor_group_buffers: &MotorGroupSensorsBuffers) -> Option<M
     let rotational_speed = motor_group_buffers
         .rotational_speed_sensor
         .get_window_average();
-    let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
     let torque = motor_group_buffers.torque_sensor.get_window_average();
     let age = utils::get_now_duration() - motor_group_buffers.age;
     // eprintln!("{} {}", (air_temperature - process_temperature).abs(), rotational_speed);
     // eprintln!("{}", torque * rotational_speed_in_rad);
     // eprintln!("{}", (age / 1000) as f64 * torque.round());
-    if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
-        Some(MotorFailure::HeatDissipationFailure)
-    } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
-    {
-        Some(MotorFailure::PowerFailure)
-    } else if age.as_secs_f64() * torque > 11_000_f64 {
-        Some(MotorFailure::OverstrainFailure)
-    } else {
-        None
-    }
+    utils::rule_violated(
+        air_temperature,
+        process_temperature,
+        rotational_speed,
+        torque,
+        age,
+    )
 }

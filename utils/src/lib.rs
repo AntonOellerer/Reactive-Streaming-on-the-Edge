@@ -2,6 +2,7 @@
 
 use core::f64::consts::PI;
 use core::time::Duration;
+use data_transfer_objects::MotorFailure;
 #[cfg(feature = "std")]
 use data_transfer_objects::{BenchmarkData, BenchmarkDataType};
 #[cfg(feature = "std")]
@@ -195,5 +196,26 @@ pub fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParamet
             .expect("Did not receive at least 10 arguments")
             .parse()
             .expect("Could not parse thread_pool_size successfully"),
+    }
+}
+
+#[cfg(feature = "std")]
+pub fn rule_violated(
+    air_temperature: f64,
+    process_temperature: f64,
+    rotational_speed: f64,
+    torque: f64,
+    age: Duration,
+) -> Option<MotorFailure> {
+    let rotational_speed_in_rad = rpm_to_rad(rotational_speed);
+    if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
+        Some(MotorFailure::HeatDissipationFailure)
+    } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
+    {
+        Some(MotorFailure::PowerFailure)
+    } else if age.as_secs_f64() * torque > 11_000_f64 {
+        Some(MotorFailure::OverstrainFailure)
+    } else {
+        None
     }
 }
