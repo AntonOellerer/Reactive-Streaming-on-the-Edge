@@ -1,15 +1,15 @@
-use std::io::Write;
-use std::net::{TcpListener, TcpStream};
-use std::ops::Shl;
-use std::process::{Command, Stdio};
-use std::time::Duration;
-use std::{fs, io, thread};
-
 use log::{error, info};
 use postcard::to_allocvec;
 #[cfg(feature = "rpi")]
 use rppal::i2c::I2c;
 use serde::Deserialize;
+use std::io::Write;
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::ops::Shl;
+use std::process::{Command, Stdio};
+use std::str::FromStr;
+use std::time::Duration;
+use std::{fs, io, thread};
 use threadpool::ThreadPool;
 
 use data_transfer_objects::{
@@ -18,7 +18,7 @@ use data_transfer_objects::{
 
 #[derive(Deserialize)]
 struct MotorDriverParameters {
-    test_driver_port: u16,
+    test_driver_address: SocketAddr,
 }
 
 fn main() {
@@ -26,16 +26,12 @@ fn main() {
     let motor_driver_parameters: MotorDriverParameters = toml::from_str(
         &fs::read_to_string("resources/config.toml").expect("Could not read config file"),
     )
-    .expect("Could not parse MotorDriverParameters from json config file");
+    .expect("Could not parse MotorDriverParameters from config file");
     info!(
-        "Attempting to bind to port {}",
-        motor_driver_parameters.test_driver_port
+        "Attempting to bind to test driver address {}",
+        motor_driver_parameters.test_driver_address
     );
-    let listener = TcpListener::bind(format!(
-        "localhost:{}",
-        motor_driver_parameters.test_driver_port
-    ))
-    .expect("Failure binding to port");
+    let listener = TcpListener::bind(motor_driver_parameters.test_driver_address).unwrap();
     for test_driver_stream in listener.incoming() {
         match test_driver_stream {
             Ok(mut test_driver_stream) => {
@@ -60,8 +56,8 @@ fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_drive
     let no_of_sensors = motor_driver_parameters.number_of_tcp_motor_groups * 4;
     let pool = ThreadPool::new(no_of_sensors);
     setup_tcp_sensors(
-        &motor_driver_parameters,
-        &test_driver,
+        motor_driver_parameters.clone(),
+        test_driver.try_clone().unwrap(),
         &motor_monitor_parameters,
         &pool,
     );
@@ -76,30 +72,33 @@ fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_drive
 }
 
 fn setup_tcp_sensors(
-    motor_driver_parameters: &MotorDriverRunParameters,
-    test_driver: &TcpStream,
+    motor_driver_parameters: MotorDriverRunParameters,
+    test_driver: TcpStream,
     motor_monitor_parameters: &MotorMonitorParameters,
     pool: &ThreadPool,
 ) {
     let no_i2c = motor_monitor_parameters.number_of_i2c_motor_groups as u16;
-    for motor_id in no_i2c..motor_driver_parameters.number_of_tcp_motor_groups as u16 + no_i2c {
-        for sensor_id in 0..4u16 {
-            let motor_driver_parameters_cloned = *motor_driver_parameters;
+    for (motor_id, motor_sensor_group) in motor_driver_parameters
+        .motor_sensor_groups
+        .clone()
+        .into_iter()
+        .enumerate()
+    {
+        let motor_id = motor_id + no_i2c as usize;
+        for (sensor_id, sensor_driver_address) in motor_sensor_group.into_iter().enumerate() {
             let full_id: u32 = (motor_id as u32).shl(16) + sensor_id as u32;
-            //fixme shouldn't the multiplicator be 4?
-            let driver_port: u16 = motor_driver_parameters.sensor_driver_start_port
-                + (motor_id - no_i2c) * 5
-                + sensor_id;
-            let sensor_port: u16 = motor_monitor_parameters.sensor_port;
-            let mut test_driver_stream_copy =
-                test_driver.try_clone().expect("Could not clone stream");
+            let motor_monitor_listen_address = motor_monitor_parameters.sensor_listen_address;
+            let test_driver_stream_copy = test_driver.try_clone().unwrap();
+            let sensor_parameters = create_sensor_parameters(
+                full_id,
+                motor_monitor_listen_address,
+                &motor_driver_parameters,
+            );
             pool.execute(move || {
                 control_sensor(
-                    full_id,
-                    driver_port,
-                    sensor_port,
-                    &motor_driver_parameters_cloned,
-                    &mut test_driver_stream_copy,
+                    sensor_driver_address,
+                    sensor_parameters,
+                    test_driver_stream_copy,
                 );
             });
         }
@@ -118,7 +117,8 @@ fn setup_i2c_sensors(motor_driver_parameters: &MotorDriverRunParameters) {
                 duration: motor_driver_parameters.duration,
                 sampling_interval: motor_driver_parameters.sampling_interval,
                 request_processing_model: motor_driver_parameters.request_processing_model,
-                motor_monitor_port: 0,
+                motor_monitor_listen_address: SocketAddr::from_str("127.0.0.1:8080").unwrap(), //todo will probably have to deal w/ this separately
+                start_time: motor_driver_parameters.start_time,
             };
             let message = postcard::to_slice_cobs(&parameters, &mut message_buffer)
                 .expect("Could not write i2c sensor parameters to slice");
@@ -158,8 +158,12 @@ fn handle_motor_monitor(
                 .to_string(),
         )
         .arg(motor_monitor_parameters.window_size.to_string())
-        .arg(motor_monitor_parameters.sensor_port.to_string())
-        .arg(motor_monitor_parameters.cloud_server_port.to_string())
+        .arg(motor_monitor_parameters.sensor_listen_address.to_string())
+        .arg(
+            motor_monitor_parameters
+                .motor_monitor_listen_address
+                .to_string(),
+        )
         .arg(motor_monitor_parameters.sampling_interval.to_string())
         .arg(motor_monitor_parameters.thread_pool_size.to_string())
         .stderr(Stdio::inherit())
@@ -172,28 +176,25 @@ fn handle_motor_monitor(
 }
 
 fn control_sensor(
-    id: u32,
-    driver_port: u16,
-    sensor_port: u16,
-    motor_driver_parameters: &MotorDriverRunParameters,
-    test_driver_stream: &mut TcpStream,
+    sensor_driver_address: SocketAddr,
+    sensor_parameters: SensorParameters,
+    mut test_driver_stream: TcpStream,
 ) {
     info!(
-        "Sending info to sensor {}, driver port {}, sensor port {}",
-        id, driver_port, sensor_port
+        "Sending info to sensor {}, driver address {}, motor monitor listen address {}",
+        sensor_parameters.id, sensor_driver_address, sensor_parameters.motor_monitor_listen_address
     );
-    let sensor_parameters = create_sensor_parameters(id, sensor_port, motor_driver_parameters);
-    match TcpStream::connect(format!("localhost:{driver_port}")) {
+    match TcpStream::connect(sensor_driver_address) {
         Ok(mut sensor_stream) => {
             write_sensor_parameters(&sensor_parameters, &mut sensor_stream);
             thread::sleep(
                 utils::get_duration_to_end(
-                    Duration::from_secs_f64(motor_driver_parameters.start_time),
-                    Duration::from_secs_f64(motor_driver_parameters.duration),
+                    Duration::from_secs_f64(sensor_parameters.start_time),
+                    Duration::from_secs_f64(sensor_parameters.duration),
                 ) + Duration::from_secs(10),
             );
-            info!("Copying data {}", id);
-            copy_sensor_benchmark_data(&mut sensor_stream, test_driver_stream);
+            info!("Copying data {}", sensor_parameters.id);
+            copy_sensor_benchmark_data(&mut sensor_stream, &mut test_driver_stream);
         }
         Err(e) => {
             error!("Failed to connect: {}", e);
@@ -212,8 +213,8 @@ fn create_motor_monitor_parameters(
         number_of_i2c_motor_groups: motor_driver_parameters.number_of_i2c_motor_groups,
         window_size: motor_driver_parameters.window_size_seconds * 1000_f64
             / motor_driver_parameters.sampling_interval as f64,
-        sensor_port: motor_driver_parameters.sensor_port,
-        cloud_server_port: motor_driver_parameters.cloud_server_port,
+        sensor_listen_address: motor_driver_parameters.sensor_listen_address,
+        motor_monitor_listen_address: motor_driver_parameters.motor_monitor_listen_address,
         sampling_interval: motor_driver_parameters.sampling_interval,
         thread_pool_size: motor_driver_parameters.thread_pool_size,
     }
@@ -221,7 +222,7 @@ fn create_motor_monitor_parameters(
 
 fn create_sensor_parameters(
     id: u32,
-    port: u16,
+    motor_monitor_listen_address: SocketAddr,
     motor_driver_parameters: &MotorDriverRunParameters,
 ) -> SensorParameters {
     SensorParameters {
@@ -229,7 +230,8 @@ fn create_sensor_parameters(
         duration: motor_driver_parameters.duration,
         sampling_interval: motor_driver_parameters.sampling_interval,
         request_processing_model: motor_driver_parameters.request_processing_model,
-        motor_monitor_port: port,
+        motor_monitor_listen_address,
+        start_time: motor_driver_parameters.start_time,
     }
 }
 

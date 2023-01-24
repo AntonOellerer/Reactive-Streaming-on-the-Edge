@@ -1,22 +1,19 @@
+use clap::builder::TypedValueParser;
+use clap::Parser;
+use data_transfer_objects::{
+    Alert, BenchmarkData, BenchmarkDataType, CloudServerRunParameters, MotorDriverRunParameters,
+    MotorSensorGroup, RequestProcessingModel,
+};
+use log::{debug, info};
+use postcard::to_allocvec_cobs;
+use serde::Deserialize;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::str;
 use std::str::FromStr;
 use std::time::Duration;
 use std::{fs, thread};
-
-use clap::builder::TypedValueParser;
-use clap::Parser;
-
-use log::{debug, info};
-use postcard::to_allocvec_cobs;
-use serde::Deserialize;
-
-use data_transfer_objects::{
-    Alert, BenchmarkData, BenchmarkDataType, CloudServerRunParameters, MotorDriverRunParameters,
-    RequestProcessingModel,
-};
 
 mod validator;
 
@@ -57,21 +54,21 @@ struct TestRunConfig {
 #[derive(Deserialize)]
 struct MotorMonitorConfig {
     window_size_seconds: u64,
-    sensor_port: u16,
+    sensor_listen_address: SocketAddr,
     sampling_interval: u32,
     thread_pool_size: usize,
 }
 
 #[derive(Deserialize)]
 struct MotorDriverConfig {
-    test_driver_port: u16,
-    sensor_driver_port: u16,
+    test_driver_listen_address: SocketAddr,
+    motor_sensor_groups: Vec<MotorSensorGroup>,
 }
 
 #[derive(Deserialize)]
 struct CloudServerConfig {
-    motor_monitor_port: u16,
-    test_driver_port: u16,
+    motor_monitor_listen_address: SocketAddr,
+    test_driver_listen_address: SocketAddr,
 }
 
 #[derive(Deserialize)]
@@ -91,8 +88,10 @@ fn main() {
     )
     .expect("Could not parse config file");
     let start_time = utils::get_now_duration() + Duration::from_secs(config.test_run.start_delay);
-    let mut motor_driver_connection = connect_to_driver(config.motor_driver.test_driver_port);
-    let mut cloud_server_connection = connect_to_driver(config.cloud_server.test_driver_port);
+    let mut motor_driver_connection =
+        connect_to_remote(config.motor_driver.test_driver_listen_address);
+    let mut cloud_server_connection =
+        connect_to_remote(config.cloud_server.test_driver_listen_address);
     let motor_driver_parameters =
         create_motor_driver_parameters(&args, &config, start_time.as_secs_f64());
     let cloud_server_parameters: CloudServerRunParameters =
@@ -111,9 +110,8 @@ fn main() {
     validator::validate_alerts(&config, &args, start_time, &alerts);
 }
 
-fn connect_to_driver(port: u16) -> TcpStream {
-    TcpStream::connect(format!("localhost:{port}"))
-        .unwrap_or_else(|_| panic!("Could not connect to {port}"))
+fn connect_to_remote(address: SocketAddr) -> TcpStream {
+    TcpStream::connect(address).unwrap_or_else(|_| panic!("Could not connect to {address}"))
 }
 
 fn create_motor_driver_parameters(
@@ -128,11 +126,11 @@ fn create_motor_driver_parameters(
         number_of_i2c_motor_groups: args.motor_groups_i2c,
         window_size_seconds: Duration::from_secs(config.motor_monitor.window_size_seconds)
             .as_secs_f64(),
-        sensor_port: config.motor_monitor.sensor_port,
+        sensor_listen_address: config.motor_monitor.sensor_listen_address,
         sampling_interval: config.motor_monitor.sampling_interval,
         request_processing_model: args.request_processing_model,
-        cloud_server_port: config.cloud_server.motor_monitor_port,
-        sensor_driver_start_port: config.motor_driver.sensor_driver_port,
+        motor_monitor_listen_address: config.cloud_server.motor_monitor_listen_address,
+        motor_sensor_groups: config.motor_driver.motor_sensor_groups.clone(),
         thread_pool_size: config.motor_monitor.thread_pool_size,
     }
 }
@@ -157,7 +155,7 @@ fn create_cloud_server_parameters(
     CloudServerRunParameters {
         start_time,
         duration: Duration::from_secs(args.duration).as_secs_f64(),
-        motor_monitor_port: config.cloud_server.motor_monitor_port,
+        motor_monitor_listen_address: config.cloud_server.motor_monitor_listen_address,
         request_processing_model: args.request_processing_model,
     }
 }

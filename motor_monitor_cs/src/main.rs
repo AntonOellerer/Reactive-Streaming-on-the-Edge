@@ -81,9 +81,13 @@ fn setup_tcp_sensor_handlers(
     tx: Sender<SensorMessage>,
     pool: &ThreadPool,
 ) -> Vec<RemoteHandle<()>> {
-    let port = motor_monitor_parameters.sensor_port;
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
-        .unwrap_or_else(|_| panic!("Could not bind sensor data listener to {port}"));
+    let listener = TcpListener::bind(motor_monitor_parameters.sensor_listen_address)
+        .unwrap_or_else(|_| {
+            panic!(
+                "Could not bind sensor data listener to {}",
+                motor_monitor_parameters.sensor_listen_address
+            )
+        });
     let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
         + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
     let total_number_of_sensors = total_number_of_motors * 4;
@@ -155,14 +159,12 @@ fn handle_consumer(
     motor_monitor_parameters: &MotorMonitorParameters,
     pool: &ThreadPool,
 ) -> RemoteHandle<()> {
-    let mut cloud_server = TcpStream::connect(format!(
-        "localhost:{}",
-        motor_monitor_parameters.cloud_server_port
-    ))
-    .expect("Could not open connection to cloud server");
+    let mut cloud_server =
+        TcpStream::connect(motor_monitor_parameters.motor_monitor_listen_address)
+            .expect("Could not open connection to cloud server");
     eprintln!(
-        "Connected to localhost:{}",
-        motor_monitor_parameters.cloud_server_port
+        "Connected to {}",
+        motor_monitor_parameters.motor_monitor_listen_address
     );
     let motor_monitor_parameters = *motor_monitor_parameters;
     pool.schedule(move || {
