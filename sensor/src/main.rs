@@ -1,16 +1,15 @@
-use std::io::{BufRead, Write};
-use std::net::{SocketAddr, TcpStream};
-use std::path::Path;
-use std::str::FromStr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::{fs, thread};
-
 use libc::time_t;
 use postcard::to_allocvec_cobs;
 use procfs::process::Process;
 use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
+use std::io::{BufRead, Write};
+use std::net::TcpStream;
+use std::path::Path;
+use std::str::FromStr;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{fs, thread};
 
 use data_transfer_objects::{
     BenchmarkData, BenchmarkDataType, RequestProcessingModel, SensorMessage, SensorParameters,
@@ -56,33 +55,39 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
             .expect("Could not parse duration successfully"),
         sampling_interval: arguments
             .get(4)
-            .expect("Did not receive at least 5 arguments")
+            .expect("Did not receive at least 4 arguments")
             .parse()
             .expect("Could not parse sampling interval successfully"),
         request_processing_model: RequestProcessingModel::from_str(
             arguments
                 .get(5)
-                .expect("Did not receive at least 6 arguments"),
+                .expect("Did not receive at least 5 arguments"),
         )
         .expect("Could not parse Request Processing Model successfully"),
-        motor_monitor_port: arguments
+        motor_monitor_listen_address: arguments
             .get(6)
+            .expect("Did not receive at least 6 arguments")
+            .parse()
+            .expect("Could not parse motor monitor listen address successfully"),
+        start_time: arguments
+            .get(7)
             .expect("Did not receive at least 7 arguments")
             .parse()
-            .expect("Could not parse port successfully"),
+            .expect("Could not parse start time successfully"),
     }
 }
 
 fn get_monitor_connection(sensor_parameters: &SensorParameters) -> TcpStream {
     thread::sleep(Duration::from_secs(2));
-    eprintln!("Connecting to {}", sensor_parameters.motor_monitor_port);
-    let address = SocketAddr::from_str(&format!(
-        "127.0.0.1:{}",
-        sensor_parameters.motor_monitor_port
-    ))
-    .expect("Could not convert monitor address to socket address");
-    TcpStream::connect_timeout(&address, Duration::from_secs(5))
-        .expect("Could not connect to motor monitor")
+    eprintln!(
+        "Connecting to {}",
+        sensor_parameters.motor_monitor_listen_address
+    );
+    TcpStream::connect_timeout(
+        &sensor_parameters.motor_monitor_listen_address,
+        Duration::from_secs(5),
+    )
+    .expect("Could not connect to motor monitor")
 }
 
 fn execute_client_server_procedure(

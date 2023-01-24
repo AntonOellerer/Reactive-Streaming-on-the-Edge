@@ -4,6 +4,9 @@ use std::fmt;
 #[cfg(feature = "std")]
 use std::fmt::Formatter;
 #[cfg(feature = "std")]
+use std::net::SocketAddr;
+use std::ops::Index;
+#[cfg(feature = "std")]
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -73,10 +76,11 @@ impl FromStr for MotorFailure {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SensorParameters {
     pub id: u32,
+    pub start_time: f64,
     pub duration: f64,
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
-    pub motor_monitor_port: u16,
+    pub motor_monitor_listen_address: SocketAddr,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -128,25 +132,25 @@ pub struct MotorMonitorParameters {
     pub number_of_tcp_motor_groups: usize,
     pub number_of_i2c_motor_groups: u8,
     pub window_size: f64,
-    pub sensor_port: u16,
-    pub cloud_server_port: u16,
+    pub sensor_listen_address: SocketAddr,
+    pub motor_monitor_listen_address: SocketAddr,
     pub sampling_interval: u32,
     pub thread_pool_size: usize,
 }
 
 #[cfg(feature = "std")]
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MotorDriverRunParameters {
     pub start_time: f64,
     pub duration: f64,
     pub number_of_tcp_motor_groups: usize,
     pub number_of_i2c_motor_groups: u8,
     pub window_size_seconds: f64,
-    pub sensor_port: u16,
+    pub sensor_listen_address: SocketAddr,
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
-    pub cloud_server_port: u16,
-    pub sensor_driver_start_port: u16,
+    pub motor_monitor_listen_address: SocketAddr,
+    pub motor_sensor_groups: Vec<MotorSensorGroup>,
     pub thread_pool_size: usize,
 }
 
@@ -179,6 +183,60 @@ impl Alert {
 pub struct CloudServerRunParameters {
     pub start_time: f64,
     pub duration: f64,
-    pub motor_monitor_port: u16,
+    pub motor_monitor_listen_address: SocketAddr,
     pub request_processing_model: RequestProcessingModel,
+}
+
+#[cfg(feature = "std")]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MotorSensorGroup {
+    at_sensor: SocketAddr,
+    pt_sensor: SocketAddr,
+    rs_sensor: SocketAddr,
+    tq_sensor: SocketAddr,
+}
+
+#[cfg(feature = "std")]
+impl Index<usize> for MotorSensorGroup {
+    type Output = SocketAddr;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match index {
+            0 => &self.at_sensor,
+            1 => &self.pt_sensor,
+            2 => &self.rs_sensor,
+            3 => &self.tq_sensor,
+            _ => panic!("Invalid MotorData index"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl IntoIterator for MotorSensorGroup {
+    type Item = SocketAddr;
+    type IntoIter = std::array::IntoIter<Self::Item, 4>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIterator::into_iter([
+            self.at_sensor,
+            self.pt_sensor,
+            self.rs_sensor,
+            self.tq_sensor,
+        ])
+    }
+}
+
+#[cfg(feature = "std")]
+impl<'a> IntoIterator for &'a MotorSensorGroup {
+    type Item = &'a SocketAddr;
+    type IntoIter = std::array::IntoIter<Self::Item, 4>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIterator::into_iter([
+            &self.at_sensor,
+            &self.pt_sensor,
+            &self.rs_sensor,
+            &self.tq_sensor,
+        ])
+    }
 }

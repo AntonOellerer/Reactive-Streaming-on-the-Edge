@@ -10,7 +10,7 @@ postcard = { version = "1.0.2", features = ["alloc"] }
 serde = { version = "1.0", default-features = false }
 data_transfer_objects = { path = "../data_transfer_objects" }
 threadpool = "1.8.1"
-toml = "0.5.10"
+toml = "0.6.0"
 utils = { path = "../utils" }
 env_logger = "0.10.0"
 log = "0.4"

@@ -81,11 +81,9 @@ fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters =
         utils::get_motor_monitor_parameters(&arguments);
-    let mut cloud_server = TcpStream::connect(format!(
-        "localhost:{}",
-        motor_monitor_parameters.cloud_server_port
-    ))
-    .expect("Could not open connection to cloud server");
+    let mut cloud_server =
+        TcpStream::connect(motor_monitor_parameters.motor_monitor_listen_address)
+            .expect("Could not open connection to cloud server");
     eprintln!("process id:{:?}", std::process::id());
     let pool = ThreadPoolBuilder::new()
         .pool_size(motor_monitor_parameters.thread_pool_size)
@@ -118,11 +116,11 @@ fn execute_reactive_streaming_procedure(
             .collect(),
     ));
     let start_time = Duration::from_secs_f64(motor_monitor_parameters.start_time);
-    let port = motor_monitor_parameters.sensor_port;
+    let sensor_listen_address = motor_monitor_parameters.sensor_listen_address;
     create(
-        move |subscriber| match TcpListener::bind(format!("127.0.0.1:{port}")) {
+        move |subscriber| match TcpListener::bind(sensor_listen_address) {
             Ok(listener) => {
-                eprintln!("Bound listener on port {port}");
+                eprintln!("Bound listener on sensor listener address {sensor_listen_address}");
                 for _ in 0..total_number_of_sensors {
                     match listener.accept() {
                         Ok((stream, _)) => {

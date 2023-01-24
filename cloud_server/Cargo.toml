@@ -8,6 +8,6 @@ data_transfer_objects = { path = "../data_transfer_objects" }
 utils = { path = "../utils" }
 postcard = "1.0.2"
 serde = { version = "1.0", default-features = false }
-toml = "0.5.9"
+toml = "0.6.0"
 env_logger = "0.10.0"
 log = "0.4"

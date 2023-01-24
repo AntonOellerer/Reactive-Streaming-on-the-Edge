@@ -8,10 +8,10 @@ use std::thread;
 use data_transfer_objects::SensorParameters;
 
 fn main() {
-    let driver_port = std::env::args().nth(1).expect("no port given");
-    eprintln!("Binding to {driver_port}");
+    let listener_address = std::env::args().nth(1).expect("no listener address given");
+    eprintln!("Binding to {listener_address}");
     let listener =
-        TcpListener::bind(format!("localhost:{driver_port}")).expect("Failure binding to port");
+        TcpListener::bind(listener_address).expect("Failure binding to listener address");
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -36,8 +36,8 @@ fn start_new_run(mut stream: TcpStream) {
     let sensor_parameters: SensorParameters =
         postcard::from_bytes(&data).expect("Failure parsing data into SensorParameters");
     println!(
-        "Running sensor {}, port {}",
-        sensor_parameters.id, sensor_parameters.motor_monitor_port
+        "Running sensor {}, motor monitor listen address {}",
+        sensor_parameters.id, sensor_parameters.motor_monitor_listen_address
     );
     let output = Command::new("cargo")
         .current_dir("../sensor")
@@ -51,7 +51,8 @@ fn start_new_run(mut stream: TcpStream) {
         .arg(sensor_parameters.duration.to_string())
         .arg(sensor_parameters.sampling_interval.to_string())
         .arg(sensor_parameters.request_processing_model.to_string())
-        .arg(sensor_parameters.motor_monitor_port.to_string())
+        .arg(sensor_parameters.motor_monitor_listen_address.to_string())
+        .arg(sensor_parameters.start_time.to_string())
         .stderr(Stdio::inherit())
         .output()
         .expect("Failure when trying to run sensor program");
