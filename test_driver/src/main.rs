@@ -2,7 +2,7 @@ use clap::builder::TypedValueParser;
 use clap::Parser;
 use data_transfer_objects::{
     Alert, BenchmarkData, BenchmarkDataType, CloudServerRunParameters, MotorDriverRunParameters,
-    MotorSensorGroup, RequestProcessingModel,
+    RequestProcessingModel,
 };
 use log::{debug, info};
 use postcard::to_allocvec_cobs;
@@ -45,9 +45,9 @@ struct Args {
     #[clap(short, long, value_parser, default_value_t = 3)]
     window_size_seconds: u64,
 
-    // Sampling interval of window and sensor
+    // Sampling interval of window and sensor in milliseconds
     #[clap(short, long, value_parser, default_value_t = 1000)]
-    sampling_interval: u32,
+    sampling_interval_ms: u32,
 
     // Size of the thread pool
     #[clap(short, long, value_parser, default_value_t = 40)]
@@ -75,7 +75,7 @@ struct MotorMonitorConfig {
 #[derive(Deserialize)]
 struct MotorDriverConfig {
     test_driver_listen_address: SocketAddr,
-    motor_sensor_groups: Vec<MotorSensorGroup>,
+    sensor_socket_addresses: Vec<SocketAddr>,
 }
 
 #[derive(Deserialize)]
@@ -144,6 +144,14 @@ fn create_motor_driver_parameters(
     config: &Config,
     start_time: f64,
 ) -> MotorDriverRunParameters {
+    let sensor_socket_addresses = match !config.motor_driver.sensor_socket_addresses.is_empty() {
+        true => config.motor_driver.sensor_socket_addresses.clone(),
+        false => fs::read_to_string("sensor_socket_addresses.txt")
+            .unwrap()
+            .lines()
+            .map(|line| SocketAddr::from_str(line).unwrap())
+            .collect(),
+    };
     MotorDriverRunParameters {
         start_time,
         duration: Duration::from_secs(args.duration).as_secs_f64(),
@@ -151,10 +159,10 @@ fn create_motor_driver_parameters(
         number_of_i2c_motor_groups: args.motor_groups_i2c,
         window_size_seconds: Duration::from_secs(args.window_size_seconds).as_secs_f64(),
         sensor_listen_address: config.motor_monitor.sensor_listen_address,
-        sampling_interval: args.sampling_interval,
+        sampling_interval: args.sampling_interval_ms,
         request_processing_model: args.request_processing_model,
         motor_monitor_listen_address: config.cloud_server.motor_monitor_listen_address,
-        motor_sensor_groups: config.motor_driver.motor_sensor_groups.clone(),
+        sensor_socket_addresses,
         thread_pool_size: args.thread_pool_size,
     }
 }

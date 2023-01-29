@@ -3,18 +3,18 @@ start_delay = 5
 
 [motor_monitor]
 window_size_seconds = 3
-sensor_listen_address = "motor_monitor:9000"
+sensor_listen_address = "127.0.0.1:9000"
 sampling_interval = 1000
 thread_pool_size = 40
 
 [motor_driver]
-test_driver_listen_address = "motor_driver:8000"
+test_driver_listen_address = "127.0.0.1:8000"
 motor_sensor_groups = [
 ]
 
 [cloud_server]
-test_driver_listen_address = "cloud_server:8001"
-motor_monitor_listen_address = "cloud_server:10000"
+test_driver_listen_address = "127.0.0.1:8001"
+motor_monitor_listen_address = "127.0.0.1:10000"
 
 [validator]
 validation_window = 3

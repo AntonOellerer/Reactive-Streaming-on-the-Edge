@@ -55,7 +55,7 @@ fn alert_equals(validation_window: Duration, expected_alert: &Alert, alert: &Ale
 }
 
 pub(crate) fn get_expected_alerts(args: &Args, start_time: Duration) -> Vec<Alert> {
-    let window_size = args.window_size_seconds * 1000 / args.sampling_interval as u64;
+    let window_size = args.window_size_seconds * 1000 / args.sampling_interval_ms as u64;
     let mut alerts: Vec<Alert> = Vec::new();
     for i in 0..args.motor_groups_i2c as u16 + args.motor_groups_tcp {
         let mut buffer: [Vec<(Duration, f32)>; 4] =
@@ -67,7 +67,7 @@ pub(crate) fn get_expected_alerts(args: &Args, start_time: Duration) -> Vec<Aler
             while time < start_time + Duration::from_secs(args.duration) {
                 let sensor_reading = get_sensor_reading(&mut rng, j);
                 buffer[j as usize].push((time, sensor_reading));
-                time += Duration::from_millis(args.sampling_interval as u64);
+                time += Duration::from_millis(args.sampling_interval_ms as u64);
             }
         }
         alerts.append(&mut get_motor_alerts(i, buffer, window_size, start_time));

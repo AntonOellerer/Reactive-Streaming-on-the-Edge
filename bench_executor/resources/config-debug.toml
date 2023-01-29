@@ -1,0 +1,7 @@
+repetitions = 1
+motor_groups_tcp = [1]
+durations = [10]
+window_size_seconds = [3]
+sampling_interval_ms = [1000]
+thread_pool_sizes = [40]
+request_processing_models = ["ClientServer", "ReactiveStreaming"]

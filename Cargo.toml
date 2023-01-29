@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+	"bench_executor",
 	"cloud_server",
 	"data_transfer_objects",
 	"motor_driver",
@@ -14,6 +15,7 @@ members = [
 ]
 
 default-members = [
+	"bench_executor",
 	"cloud_server",
 	"data_transfer_objects",
 	"motor_driver",

@@ -1,18 +1,16 @@
+use data_transfer_objects::{Alert, CloudServerRunParameters};
+use log::{error, info};
+use serde::Deserialize;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 use std::{fs, thread};
 
-use log::{error, info};
-use serde::Deserialize;
-
-use data_transfer_objects::{Alert, CloudServerRunParameters};
-
 #[cfg(debug_assertions)]
 const CONFIG_PATH: &str = "resources/config-debug.toml";
 #[cfg(not(debug_assertions))]
-const CONFIG_PATH: &str = "resources/config-production.toml";
+const CONFIG_PATH: &str = "/etc/config-production.toml";
 
 #[derive(Deserialize)]
 struct CloudServerParameters {

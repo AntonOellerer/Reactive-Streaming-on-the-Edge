@@ -19,7 +19,7 @@ use data_transfer_objects::{
 #[cfg(debug_assertions)]
 const CONFIG_PATH: &str = "resources/config-debug.toml";
 #[cfg(not(debug_assertions))]
-const CONFIG_PATH: &str = "resources/config-production.toml";
+const CONFIG_PATH: &str = "/etc/config-production.toml";
 
 #[derive(Deserialize)]
 struct MotorDriverParameters {
@@ -82,30 +82,29 @@ fn setup_tcp_sensors(
     pool: &ThreadPool,
 ) {
     let no_i2c = motor_monitor_parameters.number_of_i2c_motor_groups as u16;
-    for (motor_id, motor_sensor_group) in motor_driver_parameters
-        .motor_sensor_groups
+    for (index, sensor_driver_address) in motor_driver_parameters
+        .sensor_socket_addresses
         .clone()
         .into_iter()
         .enumerate()
     {
-        let motor_id = motor_id + no_i2c as usize;
-        for (sensor_id, sensor_driver_address) in motor_sensor_group.into_iter().enumerate() {
-            let full_id: u32 = (motor_id as u32).shl(16) + sensor_id as u32;
-            let motor_monitor_listen_address = motor_monitor_parameters.sensor_listen_address;
-            let test_driver_stream_copy = test_driver.try_clone().unwrap();
-            let sensor_parameters = create_sensor_parameters(
-                full_id,
-                motor_monitor_listen_address,
-                &motor_driver_parameters,
+        let motor_id = index / 4 + no_i2c as usize;
+        let sensor_id = index % 4;
+        let full_id: u32 = (motor_id as u32).shl(16) + sensor_id as u32;
+        let motor_monitor_listen_address = motor_monitor_parameters.sensor_listen_address;
+        let test_driver_stream_copy = test_driver.try_clone().unwrap();
+        let sensor_parameters = create_sensor_parameters(
+            full_id,
+            motor_monitor_listen_address,
+            &motor_driver_parameters,
+        );
+        pool.execute(move || {
+            control_sensor(
+                sensor_driver_address,
+                sensor_parameters,
+                test_driver_stream_copy,
             );
-            pool.execute(move || {
-                control_sensor(
-                    sensor_driver_address,
-                    sensor_parameters,
-                    test_driver_stream_copy,
-                );
-            });
-        }
+        });
     }
 }
 

@@ -6,9 +6,7 @@ sensor_listen_address = "127.0.0.1:9000"
 
 [motor_driver]
 test_driver_listen_address = "127.0.0.1:8000"
-motor_sensor_groups = [
-    { at_sensor = "127.0.0.1:11000", pt_sensor = "127.0.0.1:11001", rs_sensor = "127.0.0.1:11002", tq_sensor = "127.0.0.1:11003" }
-]
+sensor_socket_addresses = ["127.0.0.1:11000", "127.0.0.1:11001", "127.0.0.1:11002", "127.0.0.1:11003"]
 
 [cloud_server]
 test_driver_listen_address = "127.0.0.1:8001"

@@ -150,7 +150,7 @@ pub struct MotorDriverRunParameters {
     pub sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
     pub motor_monitor_listen_address: SocketAddr,
-    pub motor_sensor_groups: Vec<MotorSensorGroup>,
+    pub sensor_socket_addresses: Vec<SocketAddr>,
     pub thread_pool_size: usize,
 }
 

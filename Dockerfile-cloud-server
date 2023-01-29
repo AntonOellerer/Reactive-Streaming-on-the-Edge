@@ -1,0 +1,16 @@
+FROM rustlang/rust:nightly as builder
+
+WORKDIR /usr/src/data_transfer_objects
+COPY data_transfer_objects .
+
+WORKDIR /usr/src/utils
+COPY utils .
+
+WORKDIR /usr/src/cloud_server
+COPY cloud_server .
+RUN cargo install --path .
+
+FROM debian:buster-slim
+COPY cloud_server/resources/config-production.toml /etc/config-production.toml
+COPY --from=builder /usr/local/cargo/bin/cloud_server /usr/local/bin/cloud_server
+CMD ["cloud_server"]

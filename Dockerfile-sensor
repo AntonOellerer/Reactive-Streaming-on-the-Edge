@@ -1,0 +1,22 @@
+FROM rustlang/rust:nightly as builder
+
+WORKDIR /usr/src/data_transfer_objects
+COPY data_transfer_objects .
+
+WORKDIR /usr/src/utils
+COPY utils .
+
+WORKDIR /usr/src/sensor_driver
+COPY ./sensor_driver .
+RUN cargo install --path .
+
+WORKDIR /usr/src/sensor
+COPY ./sensor .
+RUN cargo install --path .
+
+FROM debian:buster-slim
+COPY sensor/resources/* /etc/*
+
+COPY --from=builder /usr/local/cargo/bin/sensor_driver /usr/local/bin/sensor_driver
+COPY --from=builder /usr/local/cargo/bin/sensor /usr/local/bin/sensor
+CMD ["sensor_driver", "0.0.0.0:11000"]

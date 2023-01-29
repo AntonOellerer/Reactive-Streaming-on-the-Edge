@@ -7,6 +7,11 @@ use std::thread;
 
 use data_transfer_objects::SensorParameters;
 
+#[cfg(debug_assertions)]
+const RESOURCE_PATH: &str = "resources";
+#[cfg(not(debug_assertions))]
+const RESOURCE_PATH: &str = "/etc";
+
 fn main() {
     let listener_address = std::env::args().nth(1).expect("no listener address given");
     eprintln!("Binding to {listener_address}");
@@ -41,7 +46,8 @@ fn start_new_run(mut stream: TcpStream) {
     );
     let output = create_run_command()
         .arg(format!(
-            "resources/{}.txt",
+            "{}/{}.txt",
+            RESOURCE_PATH,
             sensor_parameters.id.bitand(0xFFFF)
         ))
         .arg(sensor_parameters.id.to_string())
@@ -67,5 +73,5 @@ fn create_run_command() -> Command {
 
 #[cfg(not(debug_assertions))]
 fn create_run_command() -> Command {
-    Command::new("sensor");
+    Command::new("sensor")
 }
