@@ -3,10 +3,11 @@
 use data_transfer_objects::{
     Alert, BenchmarkDataType, MotorFailure, MotorMonitorParameters, SensorMessage,
 };
+use env_logger::Target;
 use futures::executor::{ThreadPool, ThreadPoolBuilder};
 use futures::future::RemoteHandle;
+use log::{debug, info};
 use postcard::to_allocvec_cobs;
-use procfs::process::Process;
 use rx_rust_mp::create::create;
 use rx_rust_mp::from_iter::from_iter;
 use rx_rust_mp::observable::Observable;
@@ -78,23 +79,24 @@ impl From<SensorMessage> for TimedSensorMessage {
 }
 
 fn main() {
+    env_logger::builder().target(Target::Stderr).init();
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters =
         utils::get_motor_monitor_parameters(&arguments);
     let mut cloud_server =
         TcpStream::connect(motor_monitor_parameters.motor_monitor_listen_address)
             .expect("Could not open connection to cloud server");
-    eprintln!("process id:{:?}", std::process::id());
     let pool = ThreadPoolBuilder::new()
         .pool_size(motor_monitor_parameters.thread_pool_size)
         .create()
         .unwrap();
+    info!("Running procedure");
     let handle =
         execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server, pool);
-    eprintln!("Time: {}", Process::myself().unwrap().stat().unwrap().utime);
     futures::executor::block_on(handle);
-    eprintln!("Time: {}", Process::myself().unwrap().stat().unwrap().utime);
+    info!("Processing completed");
     utils::save_benchmark_readings(0, BenchmarkDataType::MotorMonitor);
+    info!("Saved benchmark readings");
 }
 
 fn execute_reactive_streaming_procedure(
@@ -117,10 +119,11 @@ fn execute_reactive_streaming_procedure(
     ));
     let start_time = Duration::from_secs_f64(motor_monitor_parameters.start_time);
     let sensor_listen_address = motor_monitor_parameters.sensor_listen_address;
-    create(
-        move |subscriber| match TcpListener::bind(sensor_listen_address) {
+    create(move |subscriber| {
+        info!("Listening on {sensor_listen_address}");
+        match TcpListener::bind(sensor_listen_address) {
             Ok(listener) => {
-                eprintln!("Bound listener on sensor listener address {sensor_listen_address}");
+                info!("Bound listener on sensor listener address {sensor_listen_address}");
                 for _ in 0..total_number_of_sensors {
                     match listener.accept() {
                         Ok((stream, _)) => {
@@ -131,20 +134,18 @@ fn execute_reactive_streaming_procedure(
                 }
             }
             Err(e) => subscriber.error(e).unwrap(),
-        },
-    )
+        }
+        info!("Bound to all sensors");
+    })
     .flat_map(|mut stream| {
         stream
             .set_read_timeout(Some(Duration::from_secs(2)))
             .expect("Could not set read timeout");
         create(move |subscriber| {
             while let Some(sensor_message) = utils::read_object::<SensorMessage>(&mut stream) {
-                // eprintln!(
-                //     "Read message {sensor_message:?} at {:#?}",
-                //     utils::get_now_duration()
-                // );
                 subscriber.next(sensor_message).unwrap();
             }
+            info!("Reading from sensor completed");
         })
     })
     .map(TimedSensorMessage::from)
@@ -167,7 +168,6 @@ fn execute_reactive_streaming_procedure(
                     .average()
                     .map(move |sensor_average| {
                         let last_timestamp = utils::get_now_secs();
-                        // eprintln!("{sensor_id}: {sensor_average}");
                         TimedSensorMessage {
                             sensor_id,
                             reading: sensor_average,
@@ -189,18 +189,8 @@ fn execute_reactive_streaming_procedure(
                         },
                     )
                     .map(move |motor_data| {
-                        // if motor_data.contains_all_data() {
-                        //     eprintln!(
-                        //         "{motor_id}: at: {:3.2}, pt: {:3.2}, rs: {:4.2}, t: {:2.2}",
-                        //         motor_data.air_temperature_data.unwrap().reading,
-                        //         motor_data.process_temperature_data.unwrap().reading,
-                        //         motor_data.rotational_speed_data.unwrap().reading,
-                        //         motor_data.torque_data.unwrap().reading
-                        //     );
-                        // }
                         let vec = arc_clone.read().unwrap();
                         let motor_age = vec[motor_id as usize];
-                        // eprintln!("Motor data: {motor_data:?}");
                         drop(vec);
                         violated_rule(&motor_data, motor_age).map(|violated_rule| {
                             let now = utils::get_now_duration();
@@ -220,12 +210,13 @@ fn execute_reactive_streaming_procedure(
     .map(|alert| alert.unwrap())
     .subscribe(
         move |alert| {
-            eprintln!("{alert:?}");
+            info!("{alert:?}");
             let vec: Vec<u8> =
                 to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
             cloud_server
                 .write_all(&vec)
                 .expect("Could not send motor alert to cloud server");
+            debug!("Sent alert to server");
         },
         pool,
     )
@@ -249,7 +240,7 @@ fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Op
         .reading;
     let torque = sensor_average_readings.torque_data.unwrap().reading;
     let age = utils::get_now_duration() - motor_age;
-    eprintln!(
+    debug!(
         "temp: {:5.2}, rs: {:5.2}, torque: {:5.2}, wear: {:5.2}",
         (air_temperature - process_temperature).abs(),
         rotational_speed,
@@ -270,5 +261,5 @@ fn get_motor_id(sensor_id: u32) -> u32 {
 }
 
 fn get_sensor_id(sensor_id: u32) -> u32 {
-    sensor_id.bitand(0xFFFF)
+    sensor_id.bitand(0x0003)
 }

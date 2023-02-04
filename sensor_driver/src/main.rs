@@ -1,4 +1,5 @@
-use std::io::{Read, Write};
+use log::{error, info};
+use std::io::Read;
 use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
 use std::ops::BitAnd;
@@ -13,20 +14,22 @@ const RESOURCE_PATH: &str = "resources";
 const RESOURCE_PATH: &str = "/etc";
 
 fn main() {
+    env_logger::init();
     let listener_address = std::env::args().nth(1).expect("no listener address given");
-    eprintln!("Binding to {listener_address}");
-    let listener =
-        TcpListener::bind(listener_address).expect("Failure binding to listener address");
+    let listener = TcpListener::bind(listener_address.clone())
+        .unwrap_or_else(|e| panic!("Could not bind to {listener_address}: {e}"));
+    info!("Bound to {listener_address}");
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 thread::spawn(move || {
-                    println!("New connection");
+                    info!("New connection");
                     start_new_run(stream);
+                    info!("Finished benchmark run");
                 });
             }
             Err(e) => {
-                println!("Error: {e}");
+                error!("Error: {e}");
                 /* connection failed */
             }
         }
@@ -40,15 +43,15 @@ fn start_new_run(mut stream: TcpStream) {
         .expect("Failure reading data from TcpStream");
     let sensor_parameters: SensorParameters =
         postcard::from_bytes(&data).expect("Failure parsing data into SensorParameters");
-    println!(
+    info!(
         "Running sensor {}, motor monitor listen address {}",
         sensor_parameters.id, sensor_parameters.motor_monitor_listen_address
     );
-    let output = create_run_command()
+    create_run_command()
         .arg(format!(
             "{}/{}.txt",
             RESOURCE_PATH,
-            sensor_parameters.id.bitand(0xFFFF)
+            sensor_parameters.id.bitand(0x0003)
         ))
         .arg(sensor_parameters.id.to_string())
         .arg(sensor_parameters.duration.to_string())
@@ -59,9 +62,6 @@ fn start_new_run(mut stream: TcpStream) {
         .stderr(Stdio::inherit())
         .output()
         .expect("Failure when trying to run sensor program");
-    stream
-        .write_all(&output.stdout)
-        .expect("Failure writing sensor stdout to TcpStream");
 }
 
 #[cfg(debug_assertions)]

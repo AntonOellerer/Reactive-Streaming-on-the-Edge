@@ -61,7 +61,7 @@ pub(crate) fn get_expected_alerts(args: &Args, start_time: Duration) -> Vec<Aler
         let mut buffer: [Vec<(Duration, f32)>; 4] =
             [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
         for j in 0..4 {
-            let seed: u32 = (i as u32).shl(16) + j as u32;
+            let seed: u32 = (i as u32).shl(2) + j as u32;
             let mut rng = SmallRng::seed_from_u64(seed as u64);
             let mut time = start_time;
             while time < start_time + Duration::from_secs(args.duration) {

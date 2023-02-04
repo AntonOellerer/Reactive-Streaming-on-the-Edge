@@ -1,7 +1,7 @@
 use clap::builder::TypedValueParser;
 use clap::Parser;
 use data_transfer_objects::{
-    Alert, BenchmarkData, BenchmarkDataType, CloudServerRunParameters, MotorDriverRunParameters,
+    Alert, BenchmarkData, CloudServerRunParameters, MotorDriverRunParameters, NetworkConfig,
     RequestProcessingModel,
 };
 use log::{debug, info};
@@ -20,7 +20,7 @@ mod validator;
 #[cfg(debug_assertions)]
 const CONFIG_PATH: &str = "resources/config-debug.toml";
 #[cfg(not(debug_assertions))]
-const CONFIG_PATH: &str = "resources/config-production.toml";
+const NETWORK_CONFIG_PATH: &str = "../network_config.toml";
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -91,10 +91,40 @@ fn parse_request_processing_model(s: &str) -> RequestProcessingModel {
 fn main() {
     env_logger::init();
     let args = Args::parse();
-    let config: Config =
-        toml::from_str(&fs::read_to_string(CONFIG_PATH).expect("Could not read config file"))
-            .expect("Could not parse config file");
+    let config: Config = get_config();
     execute_benchmark_run(&args, &config);
+}
+
+#[cfg(debug_assertions)]
+fn get_config() -> Config {
+    toml::from_str(&fs::read_to_string(CONFIG_PATH).expect("Could not read config file"))
+        .expect("Could not parse config file")
+}
+
+#[cfg(not(debug_assertions))]
+fn get_config() -> Config {
+    let network: NetworkConfig = toml::from_str(
+        &fs::read_to_string(NETWORK_CONFIG_PATH).expect("Could not read config file"),
+    )
+    .expect("Could not parse config file");
+    Config {
+        test_run: TestRunConfig { start_delay: 5 },
+        motor_monitor: MotorMonitorConfig {
+            sensor_listen_address: SocketAddr::new(network.motor_monitor_address, 9000),
+        },
+        motor_driver: MotorDriverConfig {
+            test_driver_listen_address: SocketAddr::new(network.motor_monitor_address, 8000),
+            sensor_socket_addresses: network
+                .sensor_addresses
+                .iter()
+                .map(|ip_addr| SocketAddr::new(*ip_addr, 11000))
+                .collect(),
+        },
+        cloud_server: CloudServerConfig {
+            motor_monitor_listen_address: SocketAddr::new(network.cloud_server_address, 10000),
+            test_driver_listen_address: SocketAddr::new(network.cloud_server_address, 8001),
+        },
+    }
 }
 
 fn execute_benchmark_run(args: &Args, config: &Config) {
@@ -108,12 +138,13 @@ fn execute_benchmark_run(args: &Args, config: &Config) {
         Duration::from_secs(args.duration),
     ));
 
-    info!("Saving benchmark results");
-    save_benchmark_results(args.motor_groups_tcp, &mut motor_driver_connection);
-    info!("Getting alerts");
+    save_benchmark_results(&mut motor_driver_connection);
+    info!("Saved benchmark results");
     let alerts = get_alerts(&mut cloud_server_connection);
-    info!("Validating alerts");
+    info!("Fetched alerts");
     validator::validate_alerts(args, start_time, &alerts);
+    info!("Validated alerts");
+    info!("Finished test run");
 }
 
 fn setup_motor_driver(args: &Args, config: &Config, start_time: Duration) -> TcpStream {
@@ -204,22 +235,13 @@ fn send_cloud_server_parameters(
     info!("Sent cloud server parameters")
 }
 
-fn save_benchmark_results(motor_groups: u16, tcp_stream: &mut TcpStream) {
+fn save_benchmark_results(tcp_stream: &mut TcpStream) {
     let mut motor_monitor_benchmark_data = open_results_file("motor_monitor_results.csv");
-    let mut sensor_benchmark_data = open_results_file("sensor_benchmark_data_results.csv");
-    for _ in 0..(motor_groups * 4 + 1) {
-        let benchmark_data = utils::read_object::<BenchmarkData>(tcp_stream)
-            .expect("Could not read sensor benchmark data");
-        if benchmark_data.benchmark_data_type == BenchmarkDataType::Sensor {
-            sensor_benchmark_data
-                .write_all(benchmark_data.to_csv_string().as_bytes())
-                .expect("Could not write sensor benchmark data");
-        } else {
-            motor_monitor_benchmark_data
-                .write_all(benchmark_data.to_csv_string().as_bytes())
-                .expect("Could not write motor monitor benchmark data");
-        }
-    }
+    let benchmark_data =
+        utils::read_object::<BenchmarkData>(tcp_stream).expect("Could not read benchmark data");
+    motor_monitor_benchmark_data
+        .write_all(benchmark_data.to_csv_string().as_bytes())
+        .expect("Could not write motor monitor benchmark data");
     info!("Read benchmark data");
 }
 

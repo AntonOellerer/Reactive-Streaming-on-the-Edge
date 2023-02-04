@@ -7,3 +7,5 @@ edition = "2021"
 data_transfer_objects = { path = "../data_transfer_objects" }
 postcard = "1.0.2"
 serde = { version = "1.0", default-features = false }
+env_logger = "0.10.0"
+log = "0.4.17"

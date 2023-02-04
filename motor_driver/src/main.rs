@@ -8,8 +8,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::ops::Shl;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
-use std::time::Duration;
-use std::{fs, io, thread};
+use std::{fs, thread};
 use threadpool::ThreadPool;
 
 use data_transfer_objects::{
@@ -31,11 +30,17 @@ fn main() {
     let motor_driver_parameters: MotorDriverParameters =
         toml::from_str(&fs::read_to_string(CONFIG_PATH).expect("Could not read config file"))
             .expect("Could not parse MotorDriverParameters from config file");
+    let listener = TcpListener::bind(motor_driver_parameters.test_driver_listen_address)
+        .unwrap_or_else(|e| {
+            panic!(
+                "Could not bind to {}: {e}",
+                motor_driver_parameters.test_driver_listen_address
+            )
+        });
     info!(
-        "Attempting to bind to test driver address {}",
+        "Bound to {}",
         motor_driver_parameters.test_driver_listen_address
     );
-    let listener = TcpListener::bind(motor_driver_parameters.test_driver_listen_address).unwrap();
     for test_driver_stream in listener.incoming() {
         match test_driver_stream {
             Ok(mut test_driver_stream) => {
@@ -45,6 +50,7 @@ fn main() {
                         utils::read_object::<MotorDriverRunParameters>(&mut test_driver_stream)
                             .expect("Could not get run parameters");
                     execute_new_run(run_parameters, test_driver_stream);
+                    info!("Finished run");
                 });
             }
             Err(e) => {
@@ -61,12 +67,12 @@ fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_drive
     let pool = ThreadPool::new(no_of_sensors);
     setup_tcp_sensors(
         motor_driver_parameters.clone(),
-        test_driver.try_clone().unwrap(),
         &motor_monitor_parameters,
         &pool,
     );
     #[cfg(feature = "rpi")]
     setup_i2c_sensors(&motor_driver_parameters);
+    info!("Setup sensors");
     handle_motor_monitor(
         motor_driver_parameters.request_processing_model,
         motor_monitor_parameters,
@@ -77,7 +83,6 @@ fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_drive
 
 fn setup_tcp_sensors(
     motor_driver_parameters: MotorDriverRunParameters,
-    test_driver: TcpStream,
     motor_monitor_parameters: &MotorMonitorParameters,
     pool: &ThreadPool,
 ) {
@@ -90,20 +95,15 @@ fn setup_tcp_sensors(
     {
         let motor_id = index / 4 + no_i2c as usize;
         let sensor_id = index % 4;
-        let full_id: u32 = (motor_id as u32).shl(16) + sensor_id as u32;
+        let full_id: u32 = (motor_id as u32).shl(2) + sensor_id as u32;
         let motor_monitor_listen_address = motor_monitor_parameters.sensor_listen_address;
-        let test_driver_stream_copy = test_driver.try_clone().unwrap();
         let sensor_parameters = create_sensor_parameters(
             full_id,
             motor_monitor_listen_address,
             &motor_driver_parameters,
         );
         pool.execute(move || {
-            control_sensor(
-                sensor_driver_address,
-                sensor_parameters,
-                test_driver_stream_copy,
-            );
+            control_sensor(sensor_driver_address, sensor_parameters);
         });
     }
 }
@@ -138,7 +138,7 @@ fn handle_motor_monitor(
     motor_monitor_parameters: MotorMonitorParameters,
     mut stream: TcpStream,
 ) {
-    println!("Running motor monitor");
+    info!("Running motor monitor");
     let output = create_run_command(request_processing_model)
         .arg(motor_monitor_parameters.start_time.to_string())
         .arg(motor_monitor_parameters.duration.to_string())
@@ -166,16 +166,14 @@ fn handle_motor_monitor(
         // .stdout(Stdio::inherit())
         .output()
         .expect("Failure when trying to run motor monitor program");
+    info!("Motor monitor run complete");
     stream
         .write_all(&output.stdout)
         .expect("Failure writing sensor stdout to TcpStream");
+    info!("Forwarded benchmark data");
 }
 
-fn control_sensor(
-    sensor_driver_address: SocketAddr,
-    sensor_parameters: SensorParameters,
-    mut test_driver_stream: TcpStream,
-) {
+fn control_sensor(sensor_driver_address: SocketAddr, sensor_parameters: SensorParameters) {
     info!(
         "Sending info to sensor {}, driver address {}, motor monitor listen address {}",
         sensor_parameters.id, sensor_driver_address, sensor_parameters.motor_monitor_listen_address
@@ -183,14 +181,6 @@ fn control_sensor(
     match TcpStream::connect(sensor_driver_address) {
         Ok(mut sensor_stream) => {
             write_sensor_parameters(&sensor_parameters, &mut sensor_stream);
-            thread::sleep(
-                utils::get_duration_to_end(
-                    Duration::from_secs_f64(sensor_parameters.start_time),
-                    Duration::from_secs_f64(sensor_parameters.duration),
-                ) + Duration::from_secs(10),
-            );
-            info!("Copying data {}", sensor_parameters.id);
-            copy_sensor_benchmark_data(&mut sensor_stream, &mut test_driver_stream);
         }
         Err(e) => {
             error!("Failed to connect: {}", e);
@@ -257,12 +247,4 @@ fn write_sensor_parameters(sensor_parameters: &SensorParameters, stream: &mut Tc
     stream
         .write_all(&vec)
         .expect("Could not write sensor parameters bytes to TcpStream");
-}
-
-fn copy_sensor_benchmark_data(
-    sensor_driver_stream: &mut TcpStream,
-    test_driver_stream: &mut TcpStream,
-) {
-    io::copy(sensor_driver_stream, test_driver_stream)
-        .expect("Could not read/write from sensor driver to test driver");
 }

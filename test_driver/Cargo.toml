@@ -11,7 +11,7 @@ data_transfer_objects = { path = "../data_transfer_objects" }
 utils = { path = "../utils" }
 postcard = { version = "1.0.2", features = ["alloc"] }
 serde = { version = "1.0.152", features = ["derive"] }
-toml = "0.6.0"
+toml = "0.7.1"
 env_logger = "0.10.0"
 log = "0.4.17"
 rand = { version = "0.8.5", features = ["small_rng"] }

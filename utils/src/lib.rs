@@ -7,6 +7,7 @@ use data_transfer_objects::MotorFailure;
 use data_transfer_objects::{BenchmarkData, BenchmarkDataType};
 #[cfg(feature = "std")]
 use data_transfer_objects::{MotorMonitorParameters, RequestProcessingModel};
+use log::info;
 #[cfg(feature = "std")]
 use log::{debug, error, trace, warn};
 use postcard::accumulator::{CobsAccumulator, FeedResult};
@@ -101,18 +102,19 @@ pub fn rpm_to_rad(rpm: f64) -> f64 {
 }
 
 pub fn get_duration_to_end(start_time: Duration, duration: Duration) -> Duration {
-    eprintln!(
+    debug!(
         "start time: {:?}, now: {:?}, duration: {:?}",
         start_time,
         get_now_duration(),
         duration
     );
-    eprintln!("Result: {:?}", start_time - get_now_duration() + duration);
+    debug!("Result: {:?}", start_time - get_now_duration() + duration);
     start_time - get_now_duration() + duration
 }
 
 #[cfg(feature = "std")]
 pub fn save_benchmark_readings(id: u32, benchmark_data_type: BenchmarkDataType) {
+    info!("Saving benchmark readings");
     let me = Process::myself().expect("Could not get process info handle");
     let (cstime, cutime) = me
         .tasks()
@@ -139,7 +141,7 @@ pub fn save_benchmark_readings(id: u32, benchmark_data_type: BenchmarkDataType) 
     let _ = std::io::stdout()
         .write(&vec)
         .expect("Could not write benchmark data bytes to stdout");
-    eprintln!("Wrote benchmark data");
+    info!("Wrote benchmark data");
 }
 
 #[cfg(feature = "std")]

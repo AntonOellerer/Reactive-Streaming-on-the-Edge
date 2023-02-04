@@ -23,4 +23,5 @@ COPY motor_driver/resources/config-production.toml /etc/config-production.toml
 COPY --from=builder /usr/local/cargo/bin/motor_driver /usr/local/bin/motor_driver
 COPY --from=builder /usr/local/cargo/bin/motor_monitor_cs /usr/local/bin/motor_monitor_cs
 COPY --from=builder /usr/local/cargo/bin/motor_monitor_rx /usr/local/bin/motor_monitor_rx
+ENV RUST_LOG=info
 CMD ["motor_driver"]

@@ -15,8 +15,10 @@ COPY ./sensor .
 RUN cargo install --path .
 
 FROM debian:buster-slim
-COPY sensor/resources/* /etc/*
 
+COPY sensor/resources/. /etc/.
 COPY --from=builder /usr/local/cargo/bin/sensor_driver /usr/local/bin/sensor_driver
 COPY --from=builder /usr/local/cargo/bin/sensor /usr/local/bin/sensor
+
+ENV RUST_LOG=info
 CMD ["sensor_driver", "0.0.0.0:11000"]

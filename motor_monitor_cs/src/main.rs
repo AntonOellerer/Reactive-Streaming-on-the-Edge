@@ -3,8 +3,10 @@ use crate::sliding_window::SlidingWindow;
 use data_transfer_objects::{
     Alert, BenchmarkDataType, MotorFailure, MotorMonitorParameters, SensorMessage,
 };
+use env_logger::Target;
 use futures::executor::{ThreadPool, ThreadPoolBuilder};
 use futures::future::RemoteHandle;
+use log::{debug, error, info};
 use postcard::to_allocvec_cobs;
 #[cfg(feature = "rpi")]
 use rppal::i2c::I2c;
@@ -41,6 +43,7 @@ impl From<SensorMessage> for TimedSensorMessage {
 }
 
 fn main() {
+    env_logger::builder().target(Target::Stderr).init();
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters =
         utils::get_motor_monitor_parameters(&arguments);
@@ -54,9 +57,12 @@ fn execute_client_server_procedure(motor_monitor_parameters: &MotorMonitorParame
         .create()
         .unwrap();
     let mut handle_list = handle_sensors(*motor_monitor_parameters, tx, &pool);
+    info!("Setup complete");
     handle_list.push(handle_consumer(rx, motor_monitor_parameters, &pool));
     wait_on_complete(handle_list);
+    info!("Processing completed");
     utils::save_benchmark_readings(0, BenchmarkDataType::MotorMonitor);
+    info!("Saved benchmark readings");
 }
 
 fn wait_on_complete(handle_list: Vec<RemoteHandle<()>>) {
@@ -81,13 +87,21 @@ fn setup_tcp_sensor_handlers(
     tx: Sender<SensorMessage>,
     pool: &ThreadPool,
 ) -> Vec<RemoteHandle<()>> {
+    info!(
+        "Listening on {}",
+        motor_monitor_parameters.sensor_listen_address
+    );
     let listener = TcpListener::bind(motor_monitor_parameters.sensor_listen_address)
-        .unwrap_or_else(|_| {
+        .unwrap_or_else(|e| {
             panic!(
-                "Could not bind sensor data listener to {}",
+                "Could not bind sensor data listener to {}: {e}",
                 motor_monitor_parameters.sensor_listen_address
             )
         });
+    info!(
+        "Bound listener on sensor listener address {}",
+        motor_monitor_parameters.sensor_listen_address
+    );
     let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
         + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
     let total_number_of_sensors = total_number_of_motors * 4;
@@ -108,7 +122,7 @@ fn setup_tcp_sensor_handlers(
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error: {e}");
+                    error!("Error: {e}");
                     /* connection failed */
                 }
             }
@@ -149,9 +163,9 @@ fn setup_i2c_sensor_handlers(
 }
 
 fn handle_sensor_message(message: SensorMessage, tx: &Sender<SensorMessage>) {
-    eprintln!("{message:?}");
+    debug!("{message:?}");
     tx.send(message)
-        .unwrap_or_else(|e| eprintln!("Could not send sensor message successfully {e}"))
+        .expect("Could not send sensor sensor message to handler");
 }
 
 fn handle_consumer(
@@ -162,7 +176,7 @@ fn handle_consumer(
     let mut cloud_server =
         TcpStream::connect(motor_monitor_parameters.motor_monitor_listen_address)
             .expect("Could not open connection to cloud server");
-    eprintln!(
+    info!(
         "Connected to {}",
         motor_monitor_parameters.motor_monitor_listen_address
     );
@@ -190,14 +204,14 @@ fn handle_message(
     start_time: Duration,
 ) {
     let motor_group_id: u32 = message.sensor_id.shr(u32::BITS / 2);
-    let sensor_id = message.sensor_id.bitand(0xFFFF);
+    let sensor_id = message.sensor_id.bitand(0x0003);
     let motor_group_buffers = get_motor_group_buffers(buffers, motor_group_id);
     add_message_to_sensor_buffer(message, sensor_id, motor_group_buffers);
     let now = utils::get_now_duration();
     motor_group_buffers.refresh_caches(now);
     let rule_violated = rules_engine::violated_rule(motor_group_buffers);
     if let Some(rule) = rule_violated {
-        eprintln!("Found rule violation {rule} in motor {motor_group_id}");
+        info!("Found rule violation {rule} in motor {motor_group_id}");
         let alert = create_alert(motor_group_id, (now - start_time).as_secs_f64(), rule);
         let vec: Vec<u8> =
             to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");

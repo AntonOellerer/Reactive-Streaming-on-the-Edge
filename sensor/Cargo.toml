@@ -7,8 +7,9 @@ edition = "2021"
 
 [dependencies]
 data_transfer_objects = { path = "../data_transfer_objects" }
-procfs = { version = "0.14.2", default-features = false }
 rand = { version = "0.8.5", features = ["small_rng"] }
 postcard = { version = "1.0.2", features = ["alloc"] }
 serde = { version = "1.0", default-features = false }
 libc = { version = "0.2", default-features = false }
+env_logger = "0.10.0"
+log = "0.4.17"

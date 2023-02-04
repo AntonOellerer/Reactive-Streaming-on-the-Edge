@@ -3,13 +3,19 @@ services:
   monitor:
     image: 127.0.0.1:5000/monitor
     ports:
-      - "8000:8000"
+      - target: 8000
+        published: 8000
+        mode: host
+      - "9000:9000"
     deploy:
       replicas: 1
   cloud_server:
     image: 127.0.0.1:5000/cloud_server
     ports:
-      - "8001:8001"
+      - target: 8001
+        published: 8001
+        mode: host
+      - "10000:10000"
     deploy:
       replicas: 1
 #      placement:
@@ -17,3 +23,5 @@ services:
 #          - "node.role==manager"
   sensor:
     image: 127.0.0.1:5000/sensor
+    ports:
+      - "11000:11000"

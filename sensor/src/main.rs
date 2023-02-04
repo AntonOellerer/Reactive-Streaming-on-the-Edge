@@ -1,6 +1,7 @@
+use env_logger::Target;
 use libc::time_t;
+use log::info;
 use postcard::to_allocvec_cobs;
-use procfs::process::Process;
 use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
@@ -11,11 +12,10 @@ use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{fs, thread};
 
-use data_transfer_objects::{
-    BenchmarkData, BenchmarkDataType, RequestProcessingModel, SensorMessage, SensorParameters,
-};
+use data_transfer_objects::{RequestProcessingModel, SensorMessage, SensorParameters};
 
 fn main() {
+    env_logger::builder().target(Target::Stderr).init();
     let arguments: Vec<String> = std::env::args().collect();
     let data_path = get_and_validate_path(&arguments);
 
@@ -23,6 +23,10 @@ fn main() {
     let mut rng = SmallRng::seed_from_u64(sensor_parameters.id as u64);
 
     let stream = get_monitor_connection(&sensor_parameters);
+    info!(
+        "Connected to {}",
+        sensor_parameters.motor_monitor_listen_address
+    );
     execute_client_server_procedure(
         data_path,
         &sensor_parameters,
@@ -30,14 +34,14 @@ fn main() {
         &mut rng,
         stream,
     );
-    save_benchmark_readings(sensor_parameters.id);
+    info!("Finished benchmark run");
 }
 
 fn get_and_validate_path(args: &[String]) -> &Path {
     let path = args.get(1).expect("Did not receive at least 1 argument");
     let path = Path::new(path);
     let path_valid = path.try_exists();
-    assert!(path_valid.is_ok() & path_valid.expect("Invalid data file path given to sensors"));
+    assert!(path_valid.is_ok() & path_valid.expect("Invalid data file path given to sensor"));
     path
 }
 
@@ -79,15 +83,16 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
 
 fn get_monitor_connection(sensor_parameters: &SensorParameters) -> TcpStream {
     thread::sleep(Duration::from_secs(2));
-    eprintln!(
-        "Connecting to {}",
-        sensor_parameters.motor_monitor_listen_address
-    );
     TcpStream::connect_timeout(
         &sensor_parameters.motor_monitor_listen_address,
         Duration::from_secs(5),
     )
-    .expect("Could not connect to motor monitor")
+    .unwrap_or_else(|e| {
+        panic!(
+            "Could not connect to {}: {e}",
+            sensor_parameters.motor_monitor_listen_address
+        )
+    })
 }
 
 fn execute_client_server_procedure(
@@ -128,27 +133,6 @@ fn send_sensor_reading(
     stream
         .write_all(&vec)
         .expect("Could not write sensor reading bytes to TcpStream");
-}
-
-fn save_benchmark_readings(id: u32) {
-    let me = Process::myself().expect("Could not get process info handle");
-    let stat = me.stat().expect("Could not get /proc/[pid]/stat info");
-    let status = me.status().expect("Could not get /proc/[pid]/status info");
-    let benchmark_data = BenchmarkData {
-        id,
-        time_spent_in_kernel_mode: stat.stime,
-        time_spent_in_user_mode: stat.utime,
-        children_time_spent_in_kernel_mode: stat.cstime as u64,
-        children_time_spent_in_user_mode: stat.cutime as u64,
-        peak_resident_set_size: status.vmhwm.expect("Could not get vmhw"),
-        peak_virtual_memory_size: status.vmrss.expect("Could not get vmrss"),
-        benchmark_data_type: BenchmarkDataType::Sensor,
-    };
-    let vec: Vec<u8> =
-        to_allocvec_cobs(&benchmark_data).expect("Could not write benchmark data to Vec<u8>");
-    let _wrote = std::io::stdout()
-        .write(&vec)
-        .expect("Could not write benchmark data bytes to stdout");
 }
 
 pub fn get_now() -> time_t {

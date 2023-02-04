@@ -3,6 +3,7 @@
 use std::fmt;
 #[cfg(feature = "std")]
 use std::fmt::Formatter;
+use std::net::IpAddr;
 #[cfg(feature = "std")]
 use std::net::SocketAddr;
 use std::ops::Index;
@@ -239,4 +240,12 @@ impl<'a> IntoIterator for &'a MotorSensorGroup {
             &self.tq_sensor,
         ])
     }
+}
+
+#[cfg(feature = "std")]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NetworkConfig {
+    pub cloud_server_address: IpAddr,
+    pub motor_monitor_address: IpAddr,
+    pub sensor_addresses: Vec<IpAddr>,
 }
