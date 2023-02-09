@@ -164,8 +164,10 @@ target/
 # End of https://www.toptal.com/developers/gitignore/api/rust,linux,intellij,idea,git
 
 cloud_server/alert_protocol.csv
+cloud_server/delay_protocol.csv
 test_driver/motor_monitor_results.csv
 test_driver/sensor_benchmark_data_results.csv
+test_driver/alert_delays.csv
 
 *archive.csv
 bench_executor/*.csv

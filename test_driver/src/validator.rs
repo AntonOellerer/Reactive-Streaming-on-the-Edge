@@ -94,7 +94,7 @@ fn get_motor_alerts(
         let age = time - sensor_replacing_time;
         if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
             alerts.push(Alert {
-                time: (time - start_time).as_secs_f64(),
+                time: time.as_secs_f64(),
                 motor_id,
                 failure: MotorFailure::HeatDissipationFailure,
             });
@@ -103,14 +103,14 @@ fn get_motor_alerts(
             || torque * rotational_speed_in_rad < 3500.0
         {
             alerts.push(Alert {
-                time: (time - start_time).as_secs_f64(),
+                time: time.as_secs_f64(),
                 motor_id,
                 failure: MotorFailure::PowerFailure,
             });
             sensor_replacing_time = time;
         } else if age.as_secs_f64() * torque.round() > 10000_f64 {
             alerts.push(Alert {
-                time: (time - start_time).as_secs_f64(),
+                time: time.as_secs_f64(),
                 motor_id,
                 failure: MotorFailure::OverstrainFailure,
             });

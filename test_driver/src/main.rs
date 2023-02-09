@@ -1,8 +1,8 @@
 use clap::builder::TypedValueParser;
 use clap::Parser;
 use data_transfer_objects::{
-    Alert, BenchmarkData, CloudServerRunParameters, MotorDriverRunParameters, NetworkConfig,
-    RequestProcessingModel,
+    Alert, AlertWithDelay, BenchmarkData, CloudServerRunParameters, MotorDriverRunParameters,
+    NetworkConfig, RequestProcessingModel,
 };
 use log::{debug, info};
 use postcard::to_allocvec_cobs;
@@ -140,10 +140,11 @@ fn execute_benchmark_run(args: &Args, config: &Config) {
 
     save_benchmark_results(&mut motor_driver_connection);
     info!("Saved benchmark results");
-    let alerts = get_alerts(&mut cloud_server_connection);
+    let (alerts, delays) = get_alerts_with_delays(&mut cloud_server_connection);
     info!("Fetched alerts");
     validator::validate_alerts(args, start_time, &alerts);
     info!("Validated alerts");
+    persist_delays(delays);
     info!("Finished test run");
 }
 
@@ -254,15 +255,36 @@ fn open_results_file(file_name: &str) -> File {
         .expect("Could not open results protocol file for writing")
 }
 
-fn get_alerts(cloud_server_stream: &mut TcpStream) -> Vec<Alert> {
+fn get_alerts_with_delays(cloud_server_stream: &mut TcpStream) -> (Vec<Alert>, Vec<f64>) {
     let mut buffer = Vec::new();
     let _ = cloud_server_stream
         .read_to_end(&mut buffer)
         .expect("Could not get alert file from cloud server");
     let alerts = str::from_utf8(&buffer).expect("Could not convert u8 buffer to string");
     debug!("{:?}", alerts);
-    alerts
+    let alerts_with_delays: Vec<AlertWithDelay> = alerts
         .lines()
-        .map(|line| Alert::from_csv(String::from(line)))
-        .collect()
+        .map(|line| AlertWithDelay::from_csv(String::from(line)))
+        .collect();
+    let mut alerts = vec![];
+    let mut delays = vec![];
+    for alert_with_delay in alerts_with_delays {
+        delays.push(alert_with_delay.delay);
+        alerts.push(Alert::from_alert_with_delay(alert_with_delay));
+    }
+    (alerts, delays)
+}
+
+fn persist_delays(delays: Vec<f64>) {
+    let mut delay_file = open_results_file("alert_delays.csv");
+    write!(
+        delay_file,
+        "{},",
+        delays
+            .iter()
+            .map(|delay| delay.to_string())
+            .collect::<Vec<String>>()
+            .join(",")
+    )
+    .expect("Could not write to alert delays file");
 }

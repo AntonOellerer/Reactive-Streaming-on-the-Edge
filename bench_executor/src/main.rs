@@ -101,18 +101,31 @@ async fn main() {
                             {
                                 continue; //not doable
                             }
-                            let file_name = format!("{no_motor_groups}_{duration}_{window_size_seconds}_{sampling_interval_ms}_{thread_pool_size}_{}.csv", request_processing_model.to_string());
-                            let mut file = OpenOptions::new()
+                            let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_seconds}_{sampling_interval_ms}_{thread_pool_size}_{}", request_processing_model.to_string());
+                            let resource_usage_file_name = format!("{file_name_base}_ru.csv");
+                            let alert_delay_file_name = format!("{file_name_base}_ad.csv");
+                            let mut resource_usage_file = OpenOptions::new()
                                 .create(true)
                                 .append(true)
-                                .open(file_name.clone())
+                                .open(resource_usage_file_name.clone())
                                 .unwrap();
-                            let mut lines = fs::read_to_string(file_name).unwrap().lines().count();
+                            let mut lines = fs::read_to_string(resource_usage_file_name)
+                                .unwrap()
+                                .lines()
+                                .count();
                             if lines == 0 {
-                                writeln!(file, "id,utime,ctime,cutime,cstime,vmhwm,vmpeak")
-                                    .unwrap();
+                                writeln!(
+                                    resource_usage_file,
+                                    "id,utime,ctime,cutime,cstime,vmhwm,vmpeak"
+                                )
+                                .unwrap();
                                 lines += 1;
                             }
+                            let mut alert_delay_file = OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(alert_delay_file_name)
+                                .unwrap();
                             for i in (lines - 1)..config.repetitions as usize {
                                 info!("{i} {no_motor_groups} {duration} {window_size_seconds} {sampling_interval_ms} {thread_pool_size} {}", request_processing_model.to_string());
                                 let results = execute_test_run(
@@ -124,7 +137,10 @@ async fn main() {
                                     *request_processing_model,
                                 );
                                 match results {
-                                    Ok(results) => write!(file, "{results}").unwrap(),
+                                    Ok(results) => {
+                                        write!(resource_usage_file, "{}", results.0).unwrap();
+                                        write!(alert_delay_file, "{}", results.1).unwrap();
+                                    }
                                     Err(_) => {
                                         network_config = restart_system(&docker).await;
                                     }
@@ -257,9 +273,7 @@ fn execute_test_run(
     sampling_interval_ms: u32,
     thread_pool_size: usize,
     request_processing_model: RequestProcessingModel,
-) -> Result<String, ()> {
-    // let result = String::from_utf8(Command::new("cargo").output().unwrap().stdout).unwrap();
-    // println!("{result}",);
+) -> Result<(String, String), ()> {
     let mut command = Command::new("cargo");
     let mut child = command
         .current_dir("../test_driver")
@@ -296,10 +310,11 @@ fn execute_test_run(
     {
         Err(())
     } else {
-        Ok(
+        Ok((
             fs::read_to_string("../test_driver/motor_monitor_results.csv")
                 .unwrap_or("".to_string()),
-        )
+            fs::read_to_string("../test_driver/alert_delays.csv").unwrap_or("".to_string()),
+        ))
     }
 }
 

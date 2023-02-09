@@ -23,9 +23,6 @@ pub fn violated_rule(motor_group_buffers: &MotorGroupSensorsBuffers) -> Option<M
         .get_window_average();
     let torque = motor_group_buffers.torque_sensor.get_window_average();
     let age = utils::get_now_duration() - motor_group_buffers.age;
-    // eprintln!("{} {}", (air_temperature - process_temperature).abs(), rotational_speed);
-    // eprintln!("{}", torque * rotational_speed_in_rad);
-    // eprintln!("{}", (age / 1000) as f64 * torque.round());
     utils::rule_violated(
         air_temperature,
         process_temperature,

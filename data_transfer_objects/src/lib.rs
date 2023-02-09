@@ -169,7 +169,7 @@ pub struct Alert {
 #[cfg(feature = "std")]
 impl Alert {
     pub fn to_csv(&self) -> String {
-        format!("{},{},{}\n", self.motor_id, self.time, self.failure)
+        format!("{},{},{}", self.motor_id, self.time, self.failure)
     }
 
     pub fn from_csv(csv_line: String) -> Alert {
@@ -178,6 +178,36 @@ impl Alert {
             motor_id: u16::from_str(values[0]).expect("Could not parse motor id"),
             time: f64::from_str(values[1]).expect("Could not parse time"),
             failure: MotorFailure::from_str(values[2]).expect("Could not parse MotorFailure"),
+        }
+    }
+
+    pub fn from_alert_with_delay(alert_with_delay: AlertWithDelay) -> Alert {
+        Alert {
+            time: alert_with_delay.time,
+            motor_id: alert_with_delay.motor_id,
+            failure: alert_with_delay.failure,
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AlertWithDelay {
+    pub time: f64,
+    pub motor_id: u16,
+    pub failure: MotorFailure,
+    pub delay: f64,
+}
+
+#[cfg(feature = "std")]
+impl AlertWithDelay {
+    pub fn from_csv(csv_line: String) -> AlertWithDelay {
+        let values: Vec<&str> = csv_line.split(',').collect();
+        AlertWithDelay {
+            motor_id: u16::from_str(values[0]).expect("Could not parse motor id"),
+            time: f64::from_str(values[1]).expect("Could not parse time"),
+            failure: MotorFailure::from_str(values[2]).expect("Could not parse MotorFailure"),
+            delay: f64::from_str(values[3]).expect("Could not parse delay"),
         }
     }
 }

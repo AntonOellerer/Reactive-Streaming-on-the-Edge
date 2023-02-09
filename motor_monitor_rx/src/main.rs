@@ -276,7 +276,7 @@ fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Op
 }
 
 fn get_motor_id(sensor_id: u32) -> u32 {
-    sensor_id.shr(u32::BITS / 2)
+    sensor_id.shr(2)
 }
 
 fn get_sensor_id(sensor_id: u32) -> u32 {

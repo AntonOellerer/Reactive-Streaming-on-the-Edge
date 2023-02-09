@@ -184,12 +184,11 @@ fn handle_message(
     message: SensorMessage,
     cloud_server: &mut TcpStream,
 ) {
-    let motor_group_id: u32 = message.sensor_id.shr(u32::BITS / 2);
+    let motor_group_id: u32 = message.sensor_id.shr(2);
     let sensor_id = message.sensor_id.bitand(0x0003);
     let motor_group_buffers = get_motor_group_buffers(buffers, motor_group_id);
     add_message_to_sensor_buffer(message, sensor_id, motor_group_buffers);
-    let now = utils::get_now_duration();
-    motor_group_buffers.refresh_caches(now);
+    motor_group_buffers.refresh_caches(utils::get_now_duration());
     let rule_violated = rules_engine::violated_rule(motor_group_buffers);
     if let Some(failure) = rule_violated {
         info!("Found rule violation {failure} in motor {motor_group_id}");
