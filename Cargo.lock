@@ -1111,7 +1111,7 @@ dependencies = [
  "postcard",
  "procfs",
  "rppal",
- "rx_rust_mp",
+ "rx_rust_mp 0.6.5",
  "utils",
 ]
 
@@ -1127,7 +1127,7 @@ dependencies = [
  "postcard",
  "procfs",
  "rppal",
- "rx_rust_mp",
+ "rx_rust_mp 0.7.1",
  "utils",
 ]
 
@@ -1556,6 +1556,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rx_rust_mp"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a711eca2912f372aa3516af91a6800339689592d9f645498cd0ddf38701c732"
+dependencies = [
+ "async-std",
+ "futures",
+ "log",
+ "num-traits",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1605,6 +1617,7 @@ dependencies = [
  "postcard",
  "rand",
  "serde",
+ "utils",
 ]
 
 [[package]]

@@ -1,5 +1,4 @@
 use env_logger::Target;
-use libc::time_t;
 use log::info;
 use postcard::to_allocvec_cobs;
 use rand::prelude::IteratorRandom;
@@ -9,7 +8,7 @@ use std::io::{BufRead, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::str::FromStr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use std::{fs, thread};
 
 use data_transfer_objects::{RequestProcessingModel, SensorMessage, SensorParameters};
@@ -54,7 +53,7 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
             .expect("Could not parse id successfully"),
         duration: arguments
             .get(3)
-            .expect("Did not receive at least 4 arguments")
+            .expect("Did not receive at least 3 arguments")
             .parse()
             .expect("Could not parse duration successfully"),
         sampling_interval: arguments
@@ -102,8 +101,8 @@ fn execute_client_server_procedure(
     mut rng: &mut SmallRng,
     mut stream: TcpStream,
 ) {
-    let end_time = get_now() + duration.as_secs() as time_t;
-    while get_now() < end_time {
+    let end_time = utils::get_now_duration() + duration;
+    while utils::get_now_duration() < end_time {
         let sensor_reading = fs::read(data_path)
             .expect("Failure reading sensor data")
             .lines()
@@ -127,19 +126,11 @@ fn send_sensor_reading(
     let message = SensorMessage {
         reading: sensor_reading,
         sensor_id: sensor_parameters.id,
+        timestamp: utils::get_now_duration().as_secs_f64(),
     };
     let vec: Vec<u8> =
         to_allocvec_cobs(&message).expect("Could not write sensor reading to Vec<u8>");
     stream
         .write_all(&vec)
         .expect("Could not write sensor reading bytes to TcpStream");
-}
-
-pub fn get_now() -> time_t {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Could not get epoch seconds")
-        .as_secs()
-        .try_into()
-        .expect("Could not convert now start to time_t")
 }

@@ -6,12 +6,13 @@ use data_transfer_objects::{
 use env_logger::Target;
 use futures::executor::{ThreadPool, ThreadPoolBuilder};
 use futures::future::RemoteHandle;
-use log::{debug, info};
+use log::{debug, info, trace};
 use postcard::to_allocvec_cobs;
 use rx_rust_mp::create::create;
 use rx_rust_mp::from_iter::from_iter;
 use rx_rust_mp::observable::Observable;
 use rx_rust_mp::observer::Observer;
+use std::f64;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::ops::{BitAnd, Index, IndexMut, Shr};
@@ -19,18 +20,18 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 #[derive(Debug, Copy, Clone)]
-pub struct TimedSensorMessage {
-    pub timestamp: f64,
+struct SensorAverage {
     reading: f64,
     sensor_id: u32,
+    timestamp: f64,
 }
 
 #[derive(Debug, Copy, Clone, Default)]
 struct MotorData {
-    air_temperature_data: Option<TimedSensorMessage>,
-    process_temperature_data: Option<TimedSensorMessage>,
-    rotational_speed_data: Option<TimedSensorMessage>,
-    torque_data: Option<TimedSensorMessage>,
+    air_temperature_data: Option<SensorAverage>,
+    process_temperature_data: Option<SensorAverage>,
+    rotational_speed_data: Option<SensorAverage>,
+    torque_data: Option<SensorAverage>,
 }
 
 impl MotorData {
@@ -40,10 +41,25 @@ impl MotorData {
             && self.rotational_speed_data.is_some()
             && self.torque_data.is_some()
     }
+
+    fn get_time(&self) -> f64 {
+        [
+            self.air_temperature_data,
+            self.process_temperature_data,
+            self.rotational_speed_data,
+            self.torque_data,
+        ]
+        .as_ref()
+        .iter()
+        .flatten()
+        .map(|sensor_message| sensor_message.timestamp)
+        .reduce(f64::max)
+        .expect("Trying to extract timestamp from empty motor data")
+    }
 }
 
 impl Index<usize> for MotorData {
-    type Output = Option<TimedSensorMessage>;
+    type Output = Option<SensorAverage>;
 
     fn index(&self, index: usize) -> &Self::Output {
         match index {
@@ -64,16 +80,6 @@ impl IndexMut<usize> for MotorData {
             2 => &mut self.rotational_speed_data,
             3 => &mut self.torque_data,
             _ => panic!("Invalid MotorData index"),
-        }
-    }
-}
-
-impl From<SensorMessage> for TimedSensorMessage {
-    fn from(sensor_message: SensorMessage) -> Self {
-        TimedSensorMessage {
-            timestamp: utils::get_now_secs(),
-            reading: sensor_message.reading as f64,
-            sensor_id: sensor_message.sensor_id,
         }
     }
 }
@@ -117,7 +123,11 @@ fn execute_reactive_streaming_procedure(
             .map(|_| utils::get_now_duration())
             .collect(),
     ));
-    let start_time = Duration::from_secs_f64(motor_monitor_parameters.start_time);
+    let listen_pool = ThreadPoolBuilder::new().pool_size(1).create().unwrap();
+    let read_message_pool = ThreadPoolBuilder::new()
+        .pool_size(motor_monitor_parameters.number_of_tcp_motor_groups * 4 * 2)
+        .create()
+        .unwrap();
     let sensor_listen_address = motor_monitor_parameters.sensor_listen_address;
     create(move |subscriber| {
         info!("Listening on {sensor_listen_address}");
@@ -137,22 +147,24 @@ fn execute_reactive_streaming_procedure(
         }
         info!("Bound to all sensors");
     })
+    .subscribe_on(listen_pool)
     .flat_map(|mut stream| {
         stream
             .set_read_timeout(Some(Duration::from_secs(2)))
             .expect("Could not set read timeout");
         create(move |subscriber| {
             while let Some(sensor_message) = utils::read_object::<SensorMessage>(&mut stream) {
+                trace!("{sensor_message:?}");
                 subscriber.next(sensor_message).unwrap();
             }
             info!("Reading from sensor completed");
         })
     })
-    .map(TimedSensorMessage::from)
+    .subscribe_on(read_message_pool)
     .sliding_window(
         Duration::from_millis(motor_monitor_parameters.sampling_interval as u64),
         Duration::from_secs_f64(motor_monitor_parameters.window_size),
-        |timed_sensor_message: &TimedSensorMessage| {
+        |timed_sensor_message: &SensorMessage| {
             Duration::from_secs_f64(timed_sensor_message.timestamp)
         },
     )
@@ -160,19 +172,25 @@ fn execute_reactive_streaming_procedure(
         let arc_clone = Arc::clone(&motor_ages);
         // eprintln!("Messages: {timed_sensor_messages:?}");
         from_iter(timed_sensor_messages)
-            .group_by(|message: &TimedSensorMessage| message.sensor_id)
+            .group_by(|message: &SensorMessage| message.sensor_id)
             .flat_map(move |sensor_messages| {
                 let sensor_id = sensor_messages.key;
                 sensor_messages
-                    .map(|message: TimedSensorMessage| message.reading)
-                    .average()
-                    .map(move |sensor_average| {
-                        let last_timestamp = utils::get_now_secs();
-                        TimedSensorMessage {
-                            sensor_id,
-                            reading: sensor_average,
-                            timestamp: last_timestamp,
-                        }
+                    .map(|message: SensorMessage| (message.reading, message.timestamp))
+                    .reduce(
+                        (0f64, 0f64, 0f64),
+                        |(i, reading, time), (new_reading, new_time)| {
+                            (
+                                i + 1f64,
+                                reading + new_reading as f64,
+                                f64::max(time, new_time),
+                            )
+                        },
+                    )
+                    .map(move |(i, sum_reading, max_time)| SensorAverage {
+                        sensor_id,
+                        reading: sum_reading / i,
+                        timestamp: max_time,
                     })
             })
             .group_by(|sensor_message| get_motor_id(sensor_message.sensor_id))
@@ -182,9 +200,9 @@ fn execute_reactive_streaming_procedure(
                 motor_group
                     .reduce(
                         MotorData::default(),
-                        move |mut sensor_data, sensor_message: TimedSensorMessage| {
-                            sensor_data[get_sensor_id(sensor_message.sensor_id) as usize] =
-                                Some(sensor_message);
+                        move |mut sensor_data, sensor_average| {
+                            sensor_data[get_sensor_id(sensor_average.sensor_id) as usize] =
+                                Some(sensor_average);
                             sensor_data
                         },
                     )
@@ -198,7 +216,7 @@ fn execute_reactive_streaming_procedure(
                             vec[motor_id as usize] = now;
                             drop(vec);
                             Alert {
-                                time: (utils::get_now_duration() - start_time).as_secs_f64(),
+                                time: motor_data.get_time(),
                                 motor_id: motor_id as u16,
                                 failure: violated_rule,
                             }
@@ -224,6 +242,7 @@ fn execute_reactive_streaming_procedure(
 
 fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Option<MotorFailure> {
     if !sensor_average_readings.contains_all_data() {
+        trace!("{sensor_average_readings:?}");
         return None;
     }
     let air_temperature = sensor_average_readings

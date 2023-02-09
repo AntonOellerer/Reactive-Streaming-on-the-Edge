@@ -9,6 +9,8 @@ use std::net::SocketAddr;
 use std::ops::Index;
 #[cfg(feature = "std")]
 use std::str::FromStr;
+#[cfg(feature = "std")]
+use std::{f32, f64};
 
 use serde::{Deserialize, Serialize};
 
@@ -122,6 +124,7 @@ impl BenchmarkData {
 pub struct SensorMessage {
     pub reading: f32,
     pub sensor_id: u32,
+    pub timestamp: f64,
 }
 
 #[cfg(feature = "std")]
