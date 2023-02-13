@@ -56,8 +56,8 @@ fn main() {
 }
 
 fn send_alerts_to_driver(control_stream: &mut TcpStream) {
-    let _ = control_stream
-        .write(&fs::read("alert_protocol.csv").expect("Could not get alert file bytes"))
+    control_stream
+        .write_all(&fs::read("alert_protocol.csv").expect("Could not get alert file bytes"))
         .expect("Could not send alert file to test driver");
 }
 
@@ -74,9 +74,9 @@ fn execute_new_run(monitor_listen_address: SocketAddr) {
     match alarm_stream {
         Ok((mut alarm_stream, _)) => {
             while let Some(alert) = utils::read_object::<Alert>(&mut alarm_stream) {
-                info!("Received monitor message");
-                alert_protocol
-                    .write_all(alert.to_csv().as_bytes())
+                let delay = utils::get_now_duration() - Duration::from_secs_f64(alert.time);
+                info!("Received monitor message, delay: {delay:?}");
+                writeln!(alert_protocol, "{},{}", alert.to_csv(), delay.as_secs_f64())
                     .expect("Could not write to alert protocol");
             }
         }

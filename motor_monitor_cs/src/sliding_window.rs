@@ -1,11 +1,10 @@
+use data_transfer_objects::SensorMessage;
 use std::time::Duration;
-
-use crate::TimedSensorMessage;
 
 #[derive(Debug)]
 pub struct SlidingWindow {
     window_size: Duration,
-    elements: Vec<TimedSensorMessage>,
+    elements: Vec<SensorMessage>,
 }
 
 impl SlidingWindow {
@@ -16,7 +15,7 @@ impl SlidingWindow {
         }
     }
 
-    pub fn add(&mut self, element: TimedSensorMessage) {
+    pub fn add(&mut self, element: SensorMessage) {
         self.elements.push(element);
     }
 
@@ -37,5 +36,18 @@ impl SlidingWindow {
 
     pub fn reset(&mut self) {
         self.elements = Vec::new();
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &SensorMessage> {
+        self.elements.iter()
+    }
+}
+
+impl IntoIterator for SlidingWindow {
+    type Item = SensorMessage;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.elements.into_iter()
     }
 }

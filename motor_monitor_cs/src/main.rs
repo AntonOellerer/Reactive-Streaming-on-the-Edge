@@ -25,23 +25,6 @@ mod motor_sensor_group_buffers;
 mod rules_engine;
 mod sliding_window;
 
-#[derive(Debug)]
-pub struct TimedSensorMessage {
-    pub timestamp: f64,
-    reading: f32,
-    _sensor_id: u32,
-}
-
-impl From<SensorMessage> for TimedSensorMessage {
-    fn from(sensor_message: SensorMessage) -> Self {
-        TimedSensorMessage {
-            timestamp: utils::get_now_secs(),
-            reading: sensor_message.reading,
-            _sensor_id: sensor_message.sensor_id,
-        }
-    }
-}
-
 fn main() {
     env_logger::builder().target(Target::Stderr).init();
     let arguments: Vec<String> = std::env::args().collect();
@@ -190,9 +173,8 @@ fn handle_consumer(
                 motor_monitor_parameters.window_size,
             )))
         }
-        let start_time = Duration::from_secs_f64(motor_monitor_parameters.start_time);
         while let Ok(message) = rx.recv() {
-            handle_message(&mut buffers, message, &mut cloud_server, start_time);
+            handle_message(&mut buffers, message, &mut cloud_server);
         }
     })
 }
@@ -201,18 +183,16 @@ fn handle_message(
     buffers: &mut [MotorGroupSensorsBuffers],
     message: SensorMessage,
     cloud_server: &mut TcpStream,
-    start_time: Duration,
 ) {
-    let motor_group_id: u32 = message.sensor_id.shr(u32::BITS / 2);
+    let motor_group_id: u32 = message.sensor_id.shr(2);
     let sensor_id = message.sensor_id.bitand(0x0003);
     let motor_group_buffers = get_motor_group_buffers(buffers, motor_group_id);
     add_message_to_sensor_buffer(message, sensor_id, motor_group_buffers);
-    let now = utils::get_now_duration();
-    motor_group_buffers.refresh_caches(now);
+    motor_group_buffers.refresh_caches(utils::get_now_duration());
     let rule_violated = rules_engine::violated_rule(motor_group_buffers);
-    if let Some(rule) = rule_violated {
-        info!("Found rule violation {rule} in motor {motor_group_id}");
-        let alert = create_alert(motor_group_id, (now - start_time).as_secs_f64(), rule);
+    if let Some(failure) = rule_violated {
+        info!("Found rule violation {failure} in motor {motor_group_id}");
+        let alert = create_alert(motor_group_id, motor_group_buffers.get_time(), failure);
         let vec: Vec<u8> =
             to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
         cloud_server
@@ -229,7 +209,7 @@ fn add_message_to_sensor_buffer(
 ) {
     let sensor_buffer =
         &mut motor_group[usize::try_from(sensor_id).expect("Could not convert u32 id to usize")];
-    sensor_buffer.add(TimedSensorMessage::from(message));
+    sensor_buffer.add(message);
 }
 
 fn get_motor_group_buffers(
@@ -241,10 +221,10 @@ fn get_motor_group_buffers(
         .expect("Motor group id did not match to a motor group buffer")
 }
 
-fn create_alert(motor_group_id: u32, now: f64, rule: MotorFailure) -> Alert {
+fn create_alert(motor_group_id: u32, time: f64, failure: MotorFailure) -> Alert {
     Alert {
-        time: now,
+        time,
         motor_id: motor_group_id as u16,
-        failure: rule,
+        failure,
     }
 }

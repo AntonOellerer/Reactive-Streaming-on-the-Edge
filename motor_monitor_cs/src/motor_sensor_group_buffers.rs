@@ -1,3 +1,4 @@
+use std::f64;
 use std::ops::{Index, IndexMut};
 use std::time::Duration;
 
@@ -36,6 +37,17 @@ impl MotorGroupSensorsBuffers {
         self.rotational_speed_sensor.reset();
         self.torque_sensor.reset();
         self.age = utils::get_now_duration();
+    }
+
+    pub(crate) fn get_time(&self) -> f64 {
+        self.rotational_speed_sensor
+            .iter()
+            .chain(self.process_temperature_sensor.iter())
+            .chain(self.rotational_speed_sensor.iter())
+            .chain(self.torque_sensor.iter())
+            .map(|sensor_message| sensor_message.timestamp)
+            .reduce(f64::max)
+            .expect("Trying to get time from empty sensor group buffers")
     }
 }
 
