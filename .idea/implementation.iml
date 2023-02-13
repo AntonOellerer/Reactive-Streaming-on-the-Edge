@@ -14,6 +14,7 @@
       <sourceFolder url="file://$MODULE_DIR$/motor_monitor_cs/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/motor_monitor_rx/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/bench_executor/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/data_aggregator/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/pico_sensor/target" />
     </content>

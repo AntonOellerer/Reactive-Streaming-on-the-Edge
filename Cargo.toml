@@ -3,6 +3,7 @@
 members = [
 	"bench_executor",
 	"cloud_server",
+	"data_aggregator",
 	"data_transfer_objects",
 	"motor_driver",
 	"motor_monitor_cs",
