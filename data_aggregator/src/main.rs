@@ -1,3 +1,5 @@
+use data_transfer_objects::RequestProcessingModel;
+use plotters::prelude::{ChartBuilder, ErrorBar, IntoDrawingArea, SVGBackend, BLUE, RED, WHITE};
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
 use polars::prelude::SerReader;
@@ -9,61 +11,97 @@ use std::str::FromStr;
 
 const RAW_DATA_PATH: &str = "../bench_executor/";
 
+type ResultVector = Vec<(i32, f64, f64, f64, f64)>;
+
 fn main() {
-    let processing_models = vec!["ClientServer", "ReactiveStreaming"];
+    let processing_models = vec![
+        RequestProcessingModel::ClientServer,
+        RequestProcessingModel::ReactiveStreaming,
+    ];
+    aggregate_processing_time(&processing_models);
+    aggregate_memory_usage(&processing_models);
+    aggregate_alert_delays(&processing_models);
+    aggregate_alert_failures(&processing_models);
+}
+
+fn aggregate_processing_time(processing_models: &Vec<RequestProcessingModel>) {
+    let mut results = vec![];
     for processing_model in processing_models {
-        aggregate_processing_time(processing_model);
-        aggregate_memory_usage(processing_model);
-        aggregate_alert_delays(processing_model);
-        aggregate_alert_failures(processing_model);
+        let mut aggregates: ResultVector = vec![];
+        let data_frames = get_data_frames(processing_model, "ru");
+        for (file_name, data_frame) in data_frames {
+            let no_motor_groups = get_number_of_motor_groups(file_name);
+            let total_time = &(&(&data_frame["utime"] + &data_frame["stime"])
+                + &data_frame["cutime"])
+                + &data_frame["cstime"];
+            append_aggregates(&mut aggregates, no_motor_groups, &total_time);
+        }
+        write_results_as_csv(
+            &mut aggregates,
+            format!("{}_time.csv", processing_model.to_string()),
+        );
+        results.push((*processing_model, aggregates));
     }
+    plot_aggregate_data("processing_time".to_string(), results);
 }
 
-fn aggregate_processing_time(processing_model: &str) {
-    let mut aggregates: Vec<(i32, f64, f64, f64, f64)> = vec![];
-    let data_frames = get_data_frames(processing_model, "ru");
-    for (file_name, data_frame) in data_frames {
-        let no_motor_groups = get_number_of_motor_groups(file_name);
-        let total_time = &(&(&data_frame["utime"] + &data_frame["stime"]) + &data_frame["cutime"])
-            + &data_frame["cstime"];
-        append_aggregates(&mut aggregates, no_motor_groups, &total_time);
+fn aggregate_memory_usage(processing_models: &Vec<RequestProcessingModel>) {
+    let mut results = vec![];
+    for processing_model in processing_models {
+        let mut aggregates: ResultVector = vec![];
+        let data_frames = get_data_frames(processing_model, "ru");
+        for (file_name, data_frame) in data_frames {
+            let no_motor_groups = get_number_of_motor_groups(file_name);
+            let vmhwm = &data_frame["vmhwm"];
+            append_aggregates(&mut aggregates, no_motor_groups, vmhwm);
+        }
+        write_results_as_csv(
+            &mut aggregates,
+            format!("{}_memory.csv", processing_model.to_string()),
+        );
+        results.push((*processing_model, aggregates));
     }
-    write_results_as_csv(&mut aggregates, format!("{processing_model}_time.csv"));
+    plot_aggregate_data("memory_usage".to_string(), results);
 }
 
-fn aggregate_memory_usage(processing_model: &str) {
-    let mut aggregates: Vec<(i32, f64, f64, f64, f64)> = vec![];
-    let data_frames = get_data_frames(processing_model, "ru");
-    for (file_name, data_frame) in data_frames {
-        let no_motor_groups = get_number_of_motor_groups(file_name);
-        let vmhwm = &data_frame["vmhwm"];
-        append_aggregates(&mut aggregates, no_motor_groups, vmhwm);
+fn aggregate_alert_delays(processing_models: &Vec<RequestProcessingModel>) {
+    let mut results = vec![];
+    for processing_model in processing_models {
+        let mut aggregates: ResultVector = vec![];
+        let dir_entries = get_relevant_files(processing_model, "ad");
+        for dir_entry in dir_entries {
+            let no_motor_groups =
+                get_number_of_motor_groups(dir_entry.file_name().into_string().unwrap());
+            let series = read_csv_to_series(dir_entry);
+            append_aggregates(&mut aggregates, no_motor_groups, &series);
+        }
+        write_results_as_csv(
+            &mut aggregates,
+            format!("{}_delays.csv", processing_model.to_string()),
+        );
+        results.push((*processing_model, aggregates));
     }
-    write_results_as_csv(&mut aggregates, format!("{processing_model}_memory.csv"));
+    plot_aggregate_data("alert_delays".to_string(), results);
 }
 
-fn aggregate_alert_delays(processing_model: &str) {
-    let mut aggregates: Vec<(i32, f64, f64, f64, f64)> = vec![];
-    let dir_entries = get_relevant_files(processing_model, "ad");
-    for dir_entry in dir_entries {
-        let no_motor_groups =
-            get_number_of_motor_groups(dir_entry.file_name().into_string().unwrap());
-        let series = read_csv_to_series(dir_entry);
-        append_aggregates(&mut aggregates, no_motor_groups, &series);
+fn aggregate_alert_failures(processing_models: &Vec<RequestProcessingModel>) {
+    let mut results = vec![];
+    for processing_model in processing_models {
+        let mut aggregates: ResultVector = vec![];
+        let dir_entries = get_relevant_files(processing_model, "af");
+        for dir_entry in dir_entries {
+            let no_motor_groups =
+                get_number_of_motor_groups(dir_entry.file_name().into_string().unwrap());
+            let series = read_csv_to_series(dir_entry);
+            append_aggregates(&mut aggregates, no_motor_groups, &series);
+        }
+        write_results_as_csv(
+            &mut aggregates,
+            format!("{}_failures.csv", processing_model.to_string()),
+        );
+        results.push((*processing_model, aggregates));
     }
-    write_results_as_csv(&mut aggregates, format!("{processing_model}_delays.csv"));
-}
-
-fn aggregate_alert_failures(processing_model: &str) {
-    let mut aggregates: Vec<(i32, f64, f64, f64, f64)> = vec![];
-    let dir_entries = get_relevant_files(processing_model, "af");
-    for dir_entry in dir_entries {
-        let no_motor_groups =
-            get_number_of_motor_groups(dir_entry.file_name().into_string().unwrap());
-        let series = read_csv_to_series(dir_entry);
-        append_aggregates(&mut aggregates, no_motor_groups, &series);
-    }
-    write_results_as_csv(&mut aggregates, format!("{processing_model}_failures.csv"));
+    plot_aggregate_data("alert_failures".to_string(), results);
 }
 
 fn read_csv_to_series(dir_entry: DirEntry) -> Series {
@@ -87,11 +125,7 @@ fn get_number_of_motor_groups(file_name: String) -> i32 {
     motor_groups
 }
 
-fn append_aggregates(
-    aggregates: &mut Vec<(i32, f64, f64, f64, f64)>,
-    no_motor_groups: i32,
-    series: &Series,
-) {
+fn append_aggregates(aggregates: &mut ResultVector, no_motor_groups: i32, series: &Series) {
     let std = match series.f64() {
         Ok(cast) => cast.std(1).unwrap_or(0.0),
         Err(_) => match series.i64() {
@@ -108,7 +142,7 @@ fn append_aggregates(
     ));
 }
 
-fn write_results_as_csv(aggregates: &mut [(i32, f64, f64, f64, f64)], file_name: String) {
+fn write_results_as_csv(aggregates: &mut ResultVector, file_name: String) {
     aggregates.sort_by_key(|agg| agg.0);
     let result = aggregates
         .iter()
@@ -119,7 +153,10 @@ fn write_results_as_csv(aggregates: &mut [(i32, f64, f64, f64, f64)], file_name:
         .expect("Should be able to write processing model results");
 }
 
-fn get_data_frames(processing_model: &str, file_name_marker: &str) -> Vec<(String, DataFrame)> {
+fn get_data_frames(
+    processing_model: &RequestProcessingModel,
+    file_name_marker: &str,
+) -> Vec<(String, DataFrame)> {
     let mut schema = Schema::new();
     schema.with_column("id".to_string(), DataType::Int64);
     schema.with_column("utime".to_string(), DataType::Int64);
@@ -151,17 +188,61 @@ fn get_data_frames(processing_model: &str, file_name_marker: &str) -> Vec<(Strin
         .collect::<Vec<(String, DataFrame)>>()
 }
 
-fn get_relevant_files(processing_model: &str, file_name_marker: &str) -> Vec<DirEntry> {
+fn get_relevant_files(
+    processing_model: &RequestProcessingModel,
+    file_name_marker: &str,
+) -> Vec<DirEntry> {
     read_dir(RAW_DATA_PATH)
         .expect("Raw data directory should exist and be readable")
         .filter_map(|dir_entry| dir_entry.ok())
         .filter_map(|dir_entry| {
             if let Ok(file_name) = dir_entry.file_name().into_string() {
-                if file_name.contains(processing_model) && file_name.contains(file_name_marker) {
+                if file_name.contains(&processing_model.to_string())
+                    && file_name.contains(file_name_marker)
+                {
                     return Some(dir_entry);
                 }
             }
             None
         })
         .collect()
+}
+
+fn plot_aggregate_data(
+    data_name: String,
+    processing_model_runs: Vec<(RequestProcessingModel, ResultVector)>,
+) {
+    let file_name = format!("images/{data_name}.svg");
+    let root_drawing_area = SVGBackend::new(&file_name, (1024, 768)).into_drawing_area();
+    root_drawing_area.fill(&WHITE).unwrap();
+    let mut chart = ChartBuilder::on(&root_drawing_area)
+        .margin(15)
+        .set_left_and_bottom_label_area_size(20)
+        .build_cartesian_2d(
+            0..64,
+            0.0..processing_model_runs
+                .last()
+                .and_then(|model_run| model_run.1.last().map(|run| run.3))
+                .unwrap_or(0.0),
+        )
+        .unwrap();
+    chart.configure_mesh().draw().unwrap();
+    for processing_model_run in processing_model_runs {
+        let style = match processing_model_run.0 {
+            RequestProcessingModel::ReactiveStreaming => RED,
+            RequestProcessingModel::ClientServer => BLUE,
+        };
+        chart
+            .draw_series(processing_model_run.1.iter().map(|single_run| {
+                ErrorBar::new_vertical(
+                    single_run.0,
+                    single_run.2 - single_run.4,
+                    single_run.2,
+                    single_run.2 + single_run.4,
+                    style,
+                    10,
+                )
+            }))
+            .unwrap();
+    }
 }
