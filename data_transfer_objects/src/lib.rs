@@ -44,7 +44,7 @@ impl ToString for RequestProcessingModel {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Copy, Clone)]
 pub enum MotorFailure {
     ToolWearFailure,
     HeatDissipationFailure,
@@ -159,7 +159,7 @@ pub struct MotorDriverRunParameters {
 }
 
 #[cfg(feature = "std")]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct Alert {
     pub time: f64,
     pub motor_id: u16,

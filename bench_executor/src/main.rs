@@ -25,7 +25,7 @@ struct Config {
     request_processing_models: Vec<RequestProcessingModel>,
     window_size_seconds: Vec<u64>,
     sampling_interval_ms: Vec<u32>,
-    thread_pool_sizes: Vec<usize>,
+    _thread_pool_sizes: Vec<usize>,
 }
 
 trait RAIIConfig {
@@ -91,62 +91,55 @@ async fn main() {
     for duration in &config.durations {
         for window_size_seconds in &config.window_size_seconds {
             for sampling_interval_ms in &config.sampling_interval_ms {
-                for thread_pool_size in &config.thread_pool_sizes {
-                    for no_motor_groups in &config.motor_groups_tcp {
-                        scale_service(*no_motor_groups, &docker, &mut network_config).await;
-                        for request_processing_model in &config.request_processing_models {
-                            if *thread_pool_size as u32 <= 8
-                                && *request_processing_model
-                                    == RequestProcessingModel::ReactiveStreaming
-                            {
-                                continue; //not doable
-                            }
-                            let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_seconds}_{sampling_interval_ms}_{thread_pool_size}_{}", request_processing_model.to_string());
-                            let resource_usage_file_name = format!("{file_name_base}_ru.csv");
-                            let alert_delay_file_name = format!("{file_name_base}_ad.csv");
-                            let mut resource_usage_file = OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open(resource_usage_file_name.clone())
-                                .unwrap();
-                            let mut lines = fs::read_to_string(resource_usage_file_name)
-                                .unwrap()
-                                .lines()
-                                .count();
-                            if lines == 0 {
-                                writeln!(
-                                    resource_usage_file,
-                                    "id,utime,ctime,cutime,cstime,vmhwm,vmpeak"
-                                )
-                                .unwrap();
-                                lines += 1;
-                            }
-                            let mut alert_delay_file = OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open(alert_delay_file_name)
-                                .unwrap();
-                            for i in (lines - 1)..config.repetitions as usize {
-                                info!("{i} {no_motor_groups} {duration} {window_size_seconds} {sampling_interval_ms} {thread_pool_size} {}", request_processing_model.to_string());
-                                let results = execute_test_run(
-                                    *no_motor_groups,
-                                    *duration,
-                                    *window_size_seconds,
-                                    *sampling_interval_ms,
-                                    *thread_pool_size,
-                                    *request_processing_model,
-                                );
-                                match results {
-                                    Ok(results) => {
-                                        write!(resource_usage_file, "{}", results.0).unwrap();
-                                        write!(alert_delay_file, "{}", results.1).unwrap();
-                                    }
-                                    Err(_) => {
-                                        network_config = restart_system(&docker).await;
-                                    }
+                // for thread_pool_size in &config.thread_pool_sizes {
+                for no_motor_groups in &config.motor_groups_tcp {
+                    scale_service(*no_motor_groups, &docker, &mut network_config).await;
+                    for request_processing_model in &config.request_processing_models {
+                        let thread_pool_size = match request_processing_model {
+                            RequestProcessingModel::ReactiveStreaming => no_motor_groups * 40,
+                            RequestProcessingModel::ClientServer => no_motor_groups * 4 + 1,
+                        } as usize;
+                        let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_seconds}_{sampling_interval_ms}_{thread_pool_size}_{}", request_processing_model.to_string());
+                        let resource_usage_file_name = format!("{file_name_base}_ru.csv");
+                        let mut resource_usage_file = OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(resource_usage_file_name.clone())
+                            .unwrap();
+                        let mut lines = fs::read_to_string(resource_usage_file_name)
+                            .unwrap()
+                            .lines()
+                            .count();
+                        if lines == 0 {
+                            writeln!(
+                                resource_usage_file,
+                                "id,utime,stime,cutime,cstime,vmhwm,vmpeak"
+                            )
+                            .unwrap();
+                            lines += 1;
+                        }
+                        for i in (lines - 1)..config.repetitions as usize {
+                            info!("{i} {no_motor_groups} {duration} {window_size_seconds} {sampling_interval_ms} {thread_pool_size} {}", request_processing_model.to_string());
+                            let results = execute_test_run(
+                                *no_motor_groups,
+                                *duration,
+                                *window_size_seconds,
+                                *sampling_interval_ms,
+                                thread_pool_size,
+                                *request_processing_model,
+                            );
+                            match results {
+                                Ok(results) => {
+                                    write!(resource_usage_file, "{}", results.0).unwrap();
+                                    persist_alert_delays(&file_name_base, results.1);
+                                    persist_alert_failures(&file_name_base, results.2);
+                                }
+                                Err(_) => {
+                                    network_config = restart_system(&docker).await;
                                 }
                             }
                         }
+                        // }
                     }
                 }
             }
@@ -273,7 +266,7 @@ fn execute_test_run(
     sampling_interval_ms: u32,
     thread_pool_size: usize,
     request_processing_model: RequestProcessingModel,
-) -> Result<(String, String), ()> {
+) -> Result<(String, String, String), ()> {
     let mut command = Command::new("cargo");
     let mut child = command
         .current_dir("../test_driver")
@@ -314,6 +307,7 @@ fn execute_test_run(
             fs::read_to_string("../test_driver/motor_monitor_results.csv")
                 .unwrap_or("".to_string()),
             fs::read_to_string("../test_driver/alert_delays.csv").unwrap_or("".to_string()),
+            fs::read_to_string("../test_driver/alert_failures.csv").unwrap_or("".to_string()),
         ))
     }
 }
@@ -376,4 +370,23 @@ async fn service_container_restarted(container_name: &str, docker: &Docker) -> b
             .map(|c_name| c_name.split('.').next().expect("Could not split c name"))
             .any(|c_name| c_name == short_container_name)
     })
+}
+
+fn persist_alert_delays(file_name_base: &String, alert_delays: String) {
+    let alert_delay_file_name = format!("{file_name_base}_ad.csv");
+    persist_to_file(alert_delay_file_name, alert_delays);
+}
+
+fn persist_alert_failures(file_name_base: &String, alert_failures: String) {
+    let alert_failures_file_name = format!("{file_name_base}_af.csv");
+    persist_to_file(alert_failures_file_name, alert_failures);
+}
+
+fn persist_to_file(file_name: String, data: String) {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file_name)
+        .unwrap();
+    write!(file, "{}", data).unwrap();
 }

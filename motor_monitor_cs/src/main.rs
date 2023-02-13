@@ -148,7 +148,7 @@ fn setup_i2c_sensor_handlers(
 fn handle_sensor_message(message: SensorMessage, tx: &Sender<SensorMessage>) {
     debug!("{message:?}");
     tx.send(message)
-        .expect("Could not send sensor sensor message to handler");
+        .expect("Could not send sensor message to handler");
 }
 
 fn handle_consumer(
@@ -188,7 +188,7 @@ fn handle_message(
     let sensor_id = message.sensor_id.bitand(0x0003);
     let motor_group_buffers = get_motor_group_buffers(buffers, motor_group_id);
     add_message_to_sensor_buffer(message, sensor_id, motor_group_buffers);
-    motor_group_buffers.refresh_caches(utils::get_now_duration());
+    motor_group_buffers.refresh_caches(Duration::from_secs_f64(message.timestamp));
     let rule_violated = rules_engine::violated_rule(motor_group_buffers);
     if let Some(failure) = rule_violated {
         info!("Found rule violation {failure} in motor {motor_group_id}");
