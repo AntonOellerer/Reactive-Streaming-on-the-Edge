@@ -37,8 +37,8 @@ where
     T: for<'de> Deserialize<'de>,
 {
     let mut raw_buf = [0u8; 1];
-    let mut cobs_buf: CobsAccumulator<256> = CobsAccumulator::new();
-    let mut alert: Option<T> = None;
+    let mut cobs_buf: CobsAccumulator<2048> = CobsAccumulator::new();
+    let mut return_object: Option<T> = None;
     trace!("Reading from stream");
     while let Ok(ct) = stream.read(&mut raw_buf) {
         trace!("Read into buffer: {}", ct);
@@ -47,7 +47,7 @@ where
             break;
         }
         let mut window = &raw_buf[..ct];
-        while alert.is_none() && !window.is_empty() {
+        while return_object.is_none() && !window.is_empty() {
             trace!("Reading into accumulator");
             window = match cobs_buf.feed::<T>(window) {
                 FeedResult::Consumed => {
@@ -64,7 +64,7 @@ where
                 }
                 FeedResult::Success { data, remaining } => {
                     debug!("Deserialized object");
-                    alert = Some(data);
+                    return_object = Some(data);
                     if !remaining.is_empty() {
                         warn!("Remaining size: {}", remaining.len());
                     }
@@ -74,12 +74,12 @@ where
             trace!("Read into accumulator");
         }
         trace!("Read full window");
-        if alert.is_some() {
-            return alert;
+        if return_object.is_some() {
+            return return_object;
         }
     }
     trace!("Read");
-    alert
+    return_object
 }
 
 #[cfg(feature = "std")]

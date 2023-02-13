@@ -10,48 +10,20 @@ use std::io::BufRead;
 use std::ops::Shl;
 use std::time::Duration;
 
-pub(crate) fn validate_alerts(args: &Args, start_time: Duration, alerts: &[Alert]) {
+pub(crate) fn validate_alerts(args: &Args, start_time: Duration, alerts: &[Alert]) -> usize {
     info!("Validating {} alerts", alerts.len());
     let expected_alerts = get_expected_alerts(args, start_time);
     info!("Expecting {} alerts", expected_alerts.len());
-    let mut erroneous_alerts: Vec<(String, &Alert)> = expected_alerts
-        .iter()
-        .filter(|expected_alert| {
-            !alerts.iter().any(|alert| {
-                alert_equals(
-                    Duration::from_secs(args.window_size_seconds),
-                    expected_alert,
-                    alert,
-                )
-            })
-        })
-        .map(|alert| ("Expected".to_string(), alert))
-        .collect();
-    let not_expected_alerts: Vec<(String, &Alert)> = alerts
-        .iter()
-        .filter(|alert| {
-            !expected_alerts.iter().any(|expected_alert| {
-                alert_equals(
-                    Duration::from_secs(args.window_size_seconds),
-                    expected_alert,
-                    alert,
-                )
-            })
-        })
-        .map(|alert| ("Received".to_string(), alert))
-        .collect();
-    erroneous_alerts.append(&mut not_expected_alerts.clone());
-    erroneous_alerts.sort_by_key(|alert| alert.1.time.round() as u64);
+    let erroneous_alerts = get_alert_failures(
+        alerts,
+        &expected_alerts,
+        Duration::from_secs(args.window_size_seconds),
+    );
     error!("{} errors in total", erroneous_alerts.len());
-    for erroneous_alert in erroneous_alerts {
+    for erroneous_alert in erroneous_alerts.iter() {
         error!("{}: {:?}", erroneous_alert.0, erroneous_alert.1);
     }
-}
-
-fn alert_equals(validation_window: Duration, expected_alert: &Alert, alert: &Alert) -> bool {
-    expected_alert.failure == alert.failure
-        && expected_alert.motor_id == alert.motor_id
-        && (expected_alert.time - alert.time).abs() <= validation_window.as_secs_f64()
+    erroneous_alerts.len()
 }
 
 pub(crate) fn get_expected_alerts(args: &Args, start_time: Duration) -> Vec<Alert> {
@@ -118,6 +90,65 @@ fn get_motor_alerts(
         }
     }
     alerts
+}
+
+fn get_alert_failures<'a>(
+    received_alerts: &'a [Alert],
+    expected_alerts: &'a [Alert],
+    duration: Duration,
+) -> Vec<(String, &'a Alert)> {
+    let mut received_alerts: Vec<&Alert> = received_alerts.iter().collect();
+    received_alerts.sort_by(|alert_a, alert_b| alert_a.time.total_cmp(&alert_b.time));
+
+    let mut expected_alerts: Vec<&Alert> = expected_alerts.iter().collect();
+    expected_alerts.sort_by(|alert_a, alert_b| alert_a.time.total_cmp(&alert_b.time));
+
+    let mut alert_failures = Vec::new();
+    let mut received_alert_pointer = 0;
+    let mut expected_alert_pointer = 0;
+
+    loop {
+        let received_alert = received_alerts.get(received_alert_pointer);
+        let expected_alert = expected_alerts.get(expected_alert_pointer);
+        if received_alert.is_none() || expected_alert.is_none() {
+            break;
+        }
+        let received_alert = *received_alert.unwrap();
+        let expected_alert = *expected_alert.unwrap();
+        if alert_equals(received_alert, expected_alert, duration) {
+            received_alert_pointer += 1;
+            expected_alert_pointer += 1;
+        } else if received_alert.time < expected_alert.time {
+            alert_failures.push(("Received".to_string(), received_alert));
+            received_alert_pointer += 1;
+        } else {
+            alert_failures.push(("Expected".to_string(), expected_alert));
+            expected_alert_pointer += 1;
+        }
+    }
+    alert_failures.append(
+        &mut received_alerts[received_alert_pointer..]
+            .iter()
+            .map(|alert| ("Received".to_string(), *alert))
+            .collect(),
+    );
+    alert_failures.append(
+        &mut expected_alerts[expected_alert_pointer..]
+            .iter()
+            .map(|alert| ("Expected".to_string(), *alert))
+            .collect(),
+    );
+    alert_failures
+}
+
+fn alert_equals(
+    received_alert: &Alert,
+    expected_alert: &Alert,
+    validation_window: Duration,
+) -> bool {
+    expected_alert.failure == received_alert.failure
+        && expected_alert.motor_id == received_alert.motor_id
+        && (expected_alert.time - received_alert.time).abs() <= validation_window.as_secs_f64()
 }
 
 fn get_average_value(position: usize, window_size: u64, buffer: &[(Duration, f32)]) -> f64 {

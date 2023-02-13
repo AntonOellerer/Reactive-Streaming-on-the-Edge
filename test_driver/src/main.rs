@@ -142,9 +142,10 @@ fn execute_benchmark_run(args: &Args, config: &Config) {
     info!("Saved benchmark results");
     let (alerts, delays) = get_alerts_with_delays(&mut cloud_server_connection);
     info!("Fetched alerts");
-    validator::validate_alerts(args, start_time, &alerts);
+    let failures = validator::validate_alerts(args, start_time, &alerts);
     info!("Validated alerts");
     persist_delays(delays);
+    persist_failures(failures);
     info!("Finished test run");
 }
 
@@ -205,6 +206,7 @@ fn send_motor_driver_parameters(
 ) {
     let data = to_allocvec_cobs(&motor_driver_parameters)
         .expect("Could not write motor diver parameters to bytes");
+    debug!("Motor driver parameters size: {}", data.len());
     tcp_stream
         .write_all(&data)
         .expect("Could not send parameters to sensor driver");
@@ -276,15 +278,25 @@ fn get_alerts_with_delays(cloud_server_stream: &mut TcpStream) -> (Vec<Alert>, V
 }
 
 fn persist_delays(delays: Vec<f64>) {
-    let mut delay_file = open_results_file("alert_delays.csv");
-    write!(
-        delay_file,
-        "{},",
-        delays
-            .iter()
-            .map(|delay| delay.to_string())
-            .collect::<Vec<String>>()
-            .join(",")
-    )
-    .expect("Could not write to alert delays file");
+    if !delays.is_empty() {
+        let mut delay_file = open_results_file("alert_delays.csv");
+        write!(
+            delay_file,
+            "{},",
+            delays
+                .iter()
+                .map(|delay| delay.to_string())
+                .collect::<Vec<String>>()
+                .join(",")
+        )
+        .expect("Could not write to alert delays file");
+    }
+}
+
+// While it does not really make sense to persist a single value to a file,
+// this is done so that the external interface stays the same over the different
+// result metrics of the service (resource usage, delays, failures)
+fn persist_failures(failures: usize) {
+    let mut failure_file = open_results_file("alert_failures.csv");
+    write!(failure_file, "{failures},").expect("Could not write to failures file");
 }
