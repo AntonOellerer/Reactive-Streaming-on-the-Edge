@@ -175,4 +175,4 @@ bench_executor/*.zip
 network_config.toml
 test_driver/*.csv
 data_aggregator/*.csv
-data_aggregator/images/*
+data_aggregator/figures/*
