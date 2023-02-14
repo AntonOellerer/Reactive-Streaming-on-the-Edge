@@ -1,27 +1,32 @@
-FROM rustlang/rust:nightly as builder
+FROM --platform=$TARGETPLATFORM rustlang/rust:nightly as driver_builder
 
-WORKDIR /usr/src/data_transfer_objects
-COPY data_transfer_objects .
-
-WORKDIR /usr/src/utils
-COPY utils .
-
+COPY data_transfer_objects /usr/src/data_transfer_objects
+COPY utils /usr/src/utils
 WORKDIR /usr/src/motor_driver
 COPY ./motor_driver .
 RUN cargo install --path .
 
+FROM --platform=$TARGETPLATFORM rustlang/rust:nightly as monitor_cs_builder
+
+COPY data_transfer_objects /usr/src/data_transfer_objects
+COPY utils /usr/src/utils
 WORKDIR /usr/src/motor_monitor_cs
 COPY ./motor_monitor_cs .
 RUN cargo install --path .
 
+FROM --platform=$TARGETPLATFORM rustlang/rust:nightly as monitor_rx_builder
+
+COPY data_transfer_objects /usr/src/data_transfer_objects
+COPY utils /usr/src/utils
 WORKDIR /usr/src/motor_monitor_rx
 COPY ./motor_monitor_rx .
 RUN cargo install --path .
 
-FROM debian:buster-slim
+FROM --platform=$TARGETPLATFORM debian:buster-slim
+
 COPY motor_driver/resources/config-production.toml /etc/config-production.toml
-COPY --from=builder /usr/local/cargo/bin/motor_driver /usr/local/bin/motor_driver
-COPY --from=builder /usr/local/cargo/bin/motor_monitor_cs /usr/local/bin/motor_monitor_cs
-COPY --from=builder /usr/local/cargo/bin/motor_monitor_rx /usr/local/bin/motor_monitor_rx
+COPY --from=driver_builder /usr/local/cargo/bin/motor_driver /usr/local/bin/motor_driver
+COPY --from=monitor_cs_builder /usr/local/cargo/bin/motor_monitor_cs /usr/local/bin/motor_monitor_cs
+COPY --from=monitor_rx_builder /usr/local/cargo/bin/motor_monitor_rx /usr/local/bin/motor_monitor_rx
 ENV RUST_LOG=info
 CMD ["motor_driver"]

@@ -9,13 +9,11 @@ edition = "2021"
 data_transfer_objects = { path = "../data_transfer_objects" }
 utils = { path = "../utils" }
 postcard = { version = "1.0.2", features = ["alloc"] }
-procfs = { version = "0.14.2", default-features = false }
-rppal = { version = "0.14.1", optional = true }
+#rppal = { version = "0.14.1", optional = true }
 rx_rust_mp = "0.7.1"
 futures = { version = "0.3.25", features = ["thread-pool"]}
 env_logger = "0.10.0"
 log = "0.4.17"
 
-gettid = "0.1.2"
-[features]
-rpi = ["dep:rppal"]
+#[features]
+#rpi = ["dep:rppal"]

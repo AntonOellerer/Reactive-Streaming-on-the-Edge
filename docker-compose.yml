@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   monitor:
-    image: 127.0.0.1:5000/monitor
+    image: ${REGISTRY_IP}:5000/monitor
     ports:
       - target: 8000
         published: 8000
@@ -9,8 +9,11 @@ services:
       - "9000:9000"
     deploy:
       replicas: 1
+      placement:
+        constraints:
+          - "node.labels.device==rpi"
   cloud_server:
-    image: 127.0.0.1:5000/cloud_server
+    image: ${REGISTRY_IP}:5000/cloud_server
     ports:
       - target: 8001
         published: 8001
@@ -22,6 +25,6 @@ services:
 #        constraints:
 #          - "node.role==manager"
   sensor:
-    image: 127.0.0.1:5000/sensor
+    image: ${REGISTRY_IP}:5000/sensor
     ports:
       - "11000:11000"
