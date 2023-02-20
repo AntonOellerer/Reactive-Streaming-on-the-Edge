@@ -118,7 +118,7 @@ fn setup_i2c_sensors(motor_driver_parameters: &MotorDriverRunParameters) {
             let parameters = SensorParameters {
                 id: sensor_id as u32,
                 duration: motor_driver_parameters.duration,
-                sampling_interval: motor_driver_parameters.sampling_interval,
+                sampling_interval: motor_driver_parameters.sensor_sampling_interval,
                 request_processing_model: motor_driver_parameters.request_processing_model,
                 motor_monitor_listen_address: SocketAddr::from_str("127.0.0.1:8080").unwrap(), //todo will probably have to deal w/ this separately
                 start_time: motor_driver_parameters.start_time,
@@ -160,7 +160,16 @@ fn handle_motor_monitor(
                 .motor_monitor_listen_address
                 .to_string(),
         )
-        .arg(motor_monitor_parameters.sampling_interval.to_string())
+        .arg(
+            motor_monitor_parameters
+                .window_sampling_interval
+                .to_string(),
+        )
+        .arg(
+            motor_monitor_parameters
+                .sensor_sampling_interval
+                .to_string(),
+        )
         .arg(motor_monitor_parameters.thread_pool_size.to_string())
         .stderr(Stdio::inherit())
         // .stdout(Stdio::inherit())
@@ -217,11 +226,11 @@ fn create_motor_monitor_parameters(
         request_processing_model: motor_driver_parameters.request_processing_model,
         number_of_tcp_motor_groups: motor_driver_parameters.number_of_tcp_motor_groups,
         number_of_i2c_motor_groups: motor_driver_parameters.number_of_i2c_motor_groups,
-        window_size: motor_driver_parameters.window_size_seconds * 1000_f64
-            / motor_driver_parameters.sampling_interval as f64,
+        window_size: motor_driver_parameters.window_size_seconds,
         sensor_listen_address: motor_driver_parameters.sensor_listen_address,
         motor_monitor_listen_address: motor_driver_parameters.motor_monitor_listen_address,
-        sampling_interval: motor_driver_parameters.sampling_interval,
+        sensor_sampling_interval: motor_driver_parameters.sensor_sampling_interval,
+        window_sampling_interval: motor_driver_parameters.window_sampling_interval,
         thread_pool_size: motor_driver_parameters.thread_pool_size,
     }
 }
@@ -234,7 +243,7 @@ fn create_sensor_parameters(
     SensorParameters {
         id,
         duration: motor_driver_parameters.duration,
-        sampling_interval: motor_driver_parameters.sampling_interval,
+        sampling_interval: motor_driver_parameters.sensor_sampling_interval,
         request_processing_model: motor_driver_parameters.request_processing_model,
         motor_monitor_listen_address,
         start_time: motor_driver_parameters.start_time,

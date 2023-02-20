@@ -1,4 +1,4 @@
-cd motor_monitor_rx/
+cd ../motor_monitor_rx/
 cargo build
 cd ..
 cd motor_monitor_cs/
@@ -6,4 +6,4 @@ cargo build
 cd ..
 cd sensor
 cargo build
-cd ..
+cd ../test_driver

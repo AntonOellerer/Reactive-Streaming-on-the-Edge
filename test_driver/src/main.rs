@@ -41,15 +41,19 @@ struct Args {
     #[clap(value_enum, value_parser = clap::builder::PossibleValuesParser::new(["ClientServer", "ReactiveStreaming"]).map(| s | parse_request_processing_model(& s)))]
     request_processing_model: RequestProcessingModel,
 
-    // Size of the window averaged for determining sensor reading value
-    #[clap(short, long, value_parser, default_value_t = 3)]
+    /// Size of the window averaged for determining sensor reading value
+    #[clap(long, value_parser, default_value_t = 3)]
     window_size_seconds: u64,
 
-    // Sampling interval of window and sensor in milliseconds
+    /// Window sampling interval in milliseconds
     #[clap(short, long, value_parser, default_value_t = 1000)]
-    sampling_interval_ms: u32,
+    window_sampling_interval_ms: u32,
 
-    // Size of the thread pool
+    /// Sampling interval of sensor in milliseconds
+    #[clap(short, long, value_parser, default_value_t = 1000)]
+    sensor_sampling_interval_ms: u32,
+
+    /// Size of the thread pool
     #[clap(short, long, value_parser, default_value_t = 40)]
     thread_pool_size: usize,
 }
@@ -192,7 +196,8 @@ fn create_motor_driver_parameters(
         number_of_i2c_motor_groups: args.motor_groups_i2c,
         window_size_seconds: Duration::from_secs(args.window_size_seconds).as_secs_f64(),
         sensor_listen_address: config.motor_monitor.sensor_listen_address,
-        sampling_interval: args.sampling_interval_ms,
+        sensor_sampling_interval: args.sensor_sampling_interval_ms,
+        window_sampling_interval: args.window_sampling_interval_ms,
         request_processing_model: args.request_processing_model,
         motor_monitor_listen_address: config.cloud_server.motor_monitor_listen_address,
         sensor_socket_addresses,

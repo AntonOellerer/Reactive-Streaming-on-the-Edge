@@ -96,7 +96,7 @@ fn setup_tcp_sensor_handlers(
             match stream {
                 Ok((mut stream, _)) => {
                     stream
-                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .set_read_timeout(Some(Duration::from_secs(5)))
                         .expect("Could not set read timeout");
                     while let Some(sensor_message) =
                         utils::read_object::<SensorMessage>(&mut stream)
@@ -170,7 +170,8 @@ fn handle_consumer(
         let mut buffers: Vec<MotorGroupSensorsBuffers> = Vec::with_capacity(total_motors);
         for _ in 0..total_motors {
             buffers.push(MotorGroupSensorsBuffers::new(Duration::from_secs_f64(
-                motor_monitor_parameters.window_size,
+                motor_monitor_parameters.window_size * 1000_f64
+                    / motor_monitor_parameters.sensor_sampling_interval as f64,
             )))
         }
         while let Ok(message) = rx.recv() {

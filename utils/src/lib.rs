@@ -188,13 +188,18 @@ pub fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParamet
             .expect("Did not receive at least 8 arguments")
             .parse()
             .expect("Could not parse motor monitor listen address successfully"),
-        sampling_interval: arguments
+        window_sampling_interval: arguments
             .get(9)
             .expect("Did not receive at least 9 arguments")
             .parse()
             .expect("Could not parse sampling_interval successfully"),
-        thread_pool_size: arguments
+        sensor_sampling_interval: arguments
             .get(10)
+            .expect("Did not receive at least 9 arguments")
+            .parse()
+            .expect("Could not parse sampling_interval successfully"),
+        thread_pool_size: arguments
+            .get(11)
             .expect("Did not receive at least 10 arguments")
             .parse()
             .expect("Could not parse thread_pool_size successfully"),
