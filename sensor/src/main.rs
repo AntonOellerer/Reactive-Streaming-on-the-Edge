@@ -1,5 +1,5 @@
 use env_logger::Target;
-use log::info;
+use log::{debug, info};
 use postcard::to_allocvec_cobs;
 use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
@@ -26,13 +26,7 @@ fn main() {
         "Connected to {}",
         sensor_parameters.motor_monitor_listen_address
     );
-    execute_client_server_procedure(
-        data_path,
-        &sensor_parameters,
-        Duration::from_secs(sensor_parameters.duration as u64),
-        &mut rng,
-        stream,
-    );
+    execute_client_server_procedure(data_path, &sensor_parameters, &mut rng, stream);
     info!("Finished benchmark run");
 }
 
@@ -97,11 +91,16 @@ fn get_monitor_connection(sensor_parameters: &SensorParameters) -> TcpStream {
 fn execute_client_server_procedure(
     data_path: &Path,
     sensor_parameters: &SensorParameters,
-    duration: Duration,
     mut rng: &mut SmallRng,
     mut stream: TcpStream,
 ) {
-    let end_time = utils::get_now_duration() + duration;
+    let start_time = Duration::from_secs_f64(sensor_parameters.start_time);
+    let end_time = start_time + Duration::from_secs_f64(sensor_parameters.duration);
+    debug!(
+        "Sleeping for {}",
+        (start_time - utils::get_now_duration()).as_secs_f64()
+    );
+    thread::sleep(start_time - utils::get_now_duration());
     while utils::get_now_duration() < end_time {
         let sensor_reading = fs::read(data_path)
             .expect("Failure reading sensor data")
@@ -128,6 +127,7 @@ fn send_sensor_reading(
         sensor_id: sensor_parameters.id,
         timestamp: utils::get_now_duration().as_secs_f64(),
     };
+    debug!("Read {sensor_reading} at {}", message.timestamp);
     let vec: Vec<u8> =
         to_allocvec_cobs(&message).expect("Could not write sensor reading to Vec<u8>");
     stream

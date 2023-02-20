@@ -1,6 +1,6 @@
 use crate::Args;
 use data_transfer_objects::{Alert, MotorFailure};
-use log::{error, info};
+use log::{debug, error, info, trace};
 use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
@@ -27,7 +27,11 @@ pub(crate) fn validate_alerts(args: &Args, start_time: Duration, alerts: &[Alert
 }
 
 pub(crate) fn get_expected_alerts(args: &Args, start_time: Duration) -> Vec<Alert> {
-    let window_size = args.window_size_seconds * 1000 / args.sampling_interval_ms as u64;
+    let window_size = args.window_size_seconds * 1000 / args.sensor_sampling_interval_ms as u64;
+    debug!(
+        "Window size: {window_size}, start time: {}",
+        start_time.as_secs_f64()
+    );
     let mut alerts: Vec<Alert> = Vec::new();
     for i in 0..args.motor_groups_i2c as u16 + args.motor_groups_tcp {
         let mut buffer: [Vec<(Duration, f32)>; 4] =
@@ -38,8 +42,12 @@ pub(crate) fn get_expected_alerts(args: &Args, start_time: Duration) -> Vec<Aler
             let mut time = start_time;
             while time < start_time + Duration::from_secs(args.duration) {
                 let sensor_reading = get_sensor_reading(&mut rng, j);
+                trace!(
+                    "Sensor {seed} read {sensor_reading} at {}",
+                    time.as_secs_f64()
+                );
                 buffer[j as usize].push((time, sensor_reading));
-                time += Duration::from_millis(args.sampling_interval_ms as u64);
+                time += Duration::from_millis(args.sensor_sampling_interval_ms as u64);
             }
         }
         alerts.append(&mut get_motor_alerts(i, buffer, window_size, start_time));

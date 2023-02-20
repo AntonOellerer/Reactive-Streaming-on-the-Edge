@@ -138,7 +138,8 @@ pub struct MotorMonitorParameters {
     pub window_size: f64,
     pub sensor_listen_address: SocketAddr,
     pub motor_monitor_listen_address: SocketAddr,
-    pub sampling_interval: u32,
+    pub sensor_sampling_interval: u32,
+    pub window_sampling_interval: u32,
     pub thread_pool_size: usize,
 }
 
@@ -151,7 +152,8 @@ pub struct MotorDriverRunParameters {
     pub number_of_i2c_motor_groups: u8,
     pub window_size_seconds: f64,
     pub sensor_listen_address: SocketAddr,
-    pub sampling_interval: u32,
+    pub sensor_sampling_interval: u32,
+    pub window_sampling_interval: u32,
     pub request_processing_model: RequestProcessingModel,
     pub motor_monitor_listen_address: SocketAddr,
     pub sensor_socket_addresses: Vec<SocketAddr>,

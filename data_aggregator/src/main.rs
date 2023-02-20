@@ -1,5 +1,7 @@
 use data_transfer_objects::RequestProcessingModel;
-use plotters::prelude::{ChartBuilder, ErrorBar, IntoDrawingArea, SVGBackend, BLUE, RED, WHITE};
+use plotters::prelude::{
+    ChartBuilder, ErrorBar, IntoDrawingArea, PathElement, SVGBackend, BLACK, BLUE, RED, WHITE,
+};
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
 use polars::prelude::SerReader;
@@ -149,7 +151,7 @@ fn write_results_as_csv(aggregates: &mut ResultVector, file_name: String) {
         .map(|(id, min, mean, max, std)| format!("{id},{min},{mean},{max},{std}"))
         .collect::<Vec<String>>()
         .join("\n");
-    std::fs::write(file_name, format!("no,min,mean,max,std\n{result}"))
+    fs::write(file_name, format!("no,min,mean,max,std\n{result}"))
         .expect("Should be able to write processing model results");
 }
 
@@ -212,9 +214,12 @@ fn plot_aggregate_data(
     data_name: String,
     processing_model_runs: Vec<(RequestProcessingModel, ResultVector)>,
 ) {
-    let file_name = format!("images/{data_name}.svg");
+    let file_name = format!("figures/{data_name}.svg");
     let root_drawing_area = SVGBackend::new(&file_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
+    root_drawing_area
+        .titled(&data_name, ("sans-serif", 40))
+        .unwrap();
     let mut chart = ChartBuilder::on(&root_drawing_area)
         .margin(15)
         .set_left_and_bottom_label_area_size(20)
@@ -227,22 +232,29 @@ fn plot_aggregate_data(
         )
         .unwrap();
     chart.configure_mesh().draw().unwrap();
-    for processing_model_run in processing_model_runs {
-        let style = match processing_model_run.0 {
+    for (processing_model, results_vector) in processing_model_runs {
+        let style = match processing_model {
             RequestProcessingModel::ReactiveStreaming => RED,
             RequestProcessingModel::ClientServer => BLUE,
         };
         chart
-            .draw_series(processing_model_run.1.iter().map(|single_run| {
+            .draw_series(results_vector.iter().map(|single_run| {
                 ErrorBar::new_vertical(
                     single_run.0,
                     single_run.2 - single_run.4,
                     single_run.2,
                     single_run.2 + single_run.4,
-                    style,
+                    style.clone(),
                     10,
                 )
             }))
-            .unwrap();
+            .unwrap()
+            .label(processing_model.to_string())
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], style));
     }
+    chart
+        .configure_series_labels()
+        .border_style(&BLACK)
+        .draw()
+        .unwrap();
 }

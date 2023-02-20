@@ -150,7 +150,7 @@ fn execute_reactive_streaming_procedure(
     .subscribe_on(listen_pool)
     .flat_map(|mut stream| {
         stream
-            .set_read_timeout(Some(Duration::from_secs(2)))
+            .set_read_timeout(Some(Duration::from_secs(5)))
             .expect("Could not set read timeout");
         create(move |subscriber| {
             while let Some(sensor_message) = utils::read_object::<SensorMessage>(&mut stream) {
@@ -162,7 +162,7 @@ fn execute_reactive_streaming_procedure(
     })
     .subscribe_on(read_message_pool)
     .sliding_window(
-        Duration::from_millis(motor_monitor_parameters.sampling_interval as u64),
+        Duration::from_millis(motor_monitor_parameters.window_sampling_interval as u64),
         Duration::from_secs_f64(motor_monitor_parameters.window_size),
         |timed_sensor_message: &SensorMessage| {
             Duration::from_secs_f64(timed_sensor_message.timestamp)
