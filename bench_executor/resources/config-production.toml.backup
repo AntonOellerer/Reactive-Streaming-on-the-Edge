@@ -1,7 +1,7 @@
 repetitions = 10
 motor_groups_tcp = [1, 4, 9]
 durations = [10, 40, 90]
-window_size_seconds = [1, 2, 4]
+window_size_ms = [1, 2, 4]
 sampling_interval_ms = [500, 1000, 2000]
 thread_pool_sizes = [8, 40, 200]
 request_processing_models= ["ClientServer", "ReactiveStreaming"]

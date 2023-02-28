@@ -5,7 +5,7 @@ use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use std::io::{BufRead, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
@@ -75,12 +75,16 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
 }
 
 fn get_monitor_connection(sensor_parameters: &SensorParameters) -> TcpStream {
-    thread::sleep(Duration::from_secs(2));
-    TcpStream::connect_timeout(
-        &sensor_parameters.motor_monitor_listen_address,
-        Duration::from_secs(5),
+    let connect_to = format!(
+        "bench_system_monitor:{}",
+        sensor_parameters.motor_monitor_listen_address.port()
     )
-    .unwrap_or_else(|e| {
+    .to_socket_addrs()
+    .unwrap()
+    .next()
+    .unwrap();
+    thread::sleep(Duration::from_secs(2));
+    TcpStream::connect_timeout(&connect_to, Duration::from_secs(5)).unwrap_or_else(|e| {
         panic!(
             "Could not connect to {}: {e}",
             sensor_parameters.motor_monitor_listen_address

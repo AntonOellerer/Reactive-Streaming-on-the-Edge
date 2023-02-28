@@ -11,7 +11,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - "node.labels.device==rpi"
+          - "node.platform.arch==aarch64"
   cloud_server:
     image: ${REGISTRY_IP}:5000/cloud_server
     ports:

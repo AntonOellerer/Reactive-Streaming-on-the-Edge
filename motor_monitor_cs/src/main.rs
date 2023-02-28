@@ -14,10 +14,11 @@ use rx_rust_mp::scheduler::Scheduler;
 use std::io::Write;
 #[cfg(feature = "rpi")]
 use std::mem::size_of;
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 #[cfg(feature = "rpi")]
 use std::ops::Shl;
 use std::ops::{BitAnd, Shr};
+use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 
@@ -71,16 +72,19 @@ fn setup_tcp_sensor_handlers(
     pool: &ThreadPool,
 ) -> Vec<RemoteHandle<()>> {
     info!(
-        "Listening on {}",
-        motor_monitor_parameters.sensor_listen_address
+        "Listening on 0.0.0.0:{}",
+        motor_monitor_parameters.sensor_listen_address.port()
     );
-    let listener = TcpListener::bind(motor_monitor_parameters.sensor_listen_address)
-        .unwrap_or_else(|e| {
-            panic!(
-                "Could not bind sensor data listener to {}: {e}",
-                motor_monitor_parameters.sensor_listen_address
-            )
-        });
+    let listener = TcpListener::bind(format!(
+        "0.0.0.0:{}",
+        motor_monitor_parameters.sensor_listen_address.port()
+    ))
+    .unwrap_or_else(|e| {
+        panic!(
+            "Could not bind sensor data listener to {}: {e}",
+            motor_monitor_parameters.sensor_listen_address
+        )
+    });
     info!(
         "Bound listener on sensor listener address {}",
         motor_monitor_parameters.sensor_listen_address
@@ -169,9 +173,9 @@ fn handle_consumer(
             + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
         let mut buffers: Vec<MotorGroupSensorsBuffers> = Vec::with_capacity(total_motors);
         for _ in 0..total_motors {
-            buffers.push(MotorGroupSensorsBuffers::new(Duration::from_secs_f64(
-                motor_monitor_parameters.window_size * 1000_f64
-                    / motor_monitor_parameters.sensor_sampling_interval as f64,
+            buffers.push(MotorGroupSensorsBuffers::new(Duration::from_millis(
+                motor_monitor_parameters.window_size_ms
+                    / motor_monitor_parameters.sensor_sampling_interval as u64,
             )))
         }
         while let Ok(message) = rx.recv() {

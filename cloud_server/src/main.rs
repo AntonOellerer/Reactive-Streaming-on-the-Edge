@@ -1,11 +1,13 @@
-use data_transfer_objects::{Alert, CloudServerRunParameters};
-use log::{error, info};
-use serde::Deserialize;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 use std::{fs, thread};
+
+use log::{error, info};
+use serde::Deserialize;
+
+use data_transfer_objects::{Alert, CloudServerRunParameters};
 
 #[cfg(debug_assertions)]
 const CONFIG_PATH: &str = "resources/config-debug.toml";
@@ -29,6 +31,10 @@ fn main() {
                 cloud_server_parameters.test_driver_listen_address
             )
         });
+    info!(
+        "Listening on {}",
+        cloud_server_parameters.test_driver_listen_address
+    );
     for control_stream in listener.incoming() {
         match control_stream {
             Ok(mut control_stream) => {

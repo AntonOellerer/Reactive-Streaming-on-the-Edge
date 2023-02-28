@@ -17,7 +17,7 @@ pub(crate) fn validate_alerts(args: &Args, start_time: Duration, alerts: &[Alert
     let erroneous_alerts = get_alert_failures(
         alerts,
         &expected_alerts,
-        Duration::from_secs(args.window_size_seconds),
+        Duration::from_millis(args.window_size_ms),
     );
     error!("{} errors in total", erroneous_alerts.len());
     for erroneous_alert in erroneous_alerts.iter() {
@@ -27,7 +27,7 @@ pub(crate) fn validate_alerts(args: &Args, start_time: Duration, alerts: &[Alert
 }
 
 pub(crate) fn get_expected_alerts(args: &Args, start_time: Duration) -> Vec<Alert> {
-    let window_size = args.window_size_seconds * 1000 / args.sensor_sampling_interval_ms as u64;
+    let window_size = args.window_size_ms / args.sensor_sampling_interval_ms as u64;
     debug!(
         "Window size: {window_size}, start time: {}",
         start_time.as_secs_f64()

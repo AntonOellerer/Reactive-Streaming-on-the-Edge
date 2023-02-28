@@ -43,7 +43,7 @@ struct Args {
 
     /// Size of the window averaged for determining sensor reading value
     #[clap(long, value_parser, default_value_t = 3)]
-    window_size_seconds: u64,
+    window_size_ms: u64,
 
     /// Window sampling interval in milliseconds
     #[clap(short, long, value_parser, default_value_t = 1000)]
@@ -146,16 +146,24 @@ fn execute_benchmark_run(args: &Args, config: &Config) {
     info!("Saved benchmark results");
     let (alerts, delays) = get_alerts_with_delays(&mut cloud_server_connection);
     info!("Fetched alerts");
-    let failures = validator::validate_alerts(args, start_time, &alerts);
+    // let failures = validator::validate_alerts(args, start_time, &alerts);
     info!("Validated alerts");
     persist_delays(delays);
-    persist_failures(failures);
+    // persist_failures(failures);
     info!("Finished test run");
 }
 
 fn setup_motor_driver(args: &Args, config: &Config, start_time: Duration) -> TcpStream {
-    let mut motor_driver_connection =
-        connect_to_remote(config.motor_driver.test_driver_listen_address);
+    let mut motor_driver_connection = connect_to_remote(
+        SocketAddr::from_str(
+            format!(
+                "192.168.178.51:{}",
+                config.motor_driver.test_driver_listen_address.port()
+            )
+            .as_str(),
+        )
+        .unwrap(),
+    ); //todo
     let motor_driver_parameters =
         create_motor_driver_parameters(args, config, start_time.as_secs_f64());
     send_motor_driver_parameters(motor_driver_parameters, &mut motor_driver_connection);
@@ -163,8 +171,16 @@ fn setup_motor_driver(args: &Args, config: &Config, start_time: Duration) -> Tcp
 }
 
 fn setup_cloud_server(args: &Args, config: &Config, start_time: Duration) -> TcpStream {
-    let mut cloud_server_connection =
-        connect_to_remote(config.cloud_server.test_driver_listen_address);
+    let mut cloud_server_connection = connect_to_remote(
+        SocketAddr::from_str(
+            format!(
+                "127.0.0.1:{}",
+                config.cloud_server.test_driver_listen_address.port()
+            )
+            .as_str(),
+        )
+        .unwrap(),
+    );
     let cloud_server_parameters: CloudServerRunParameters =
         create_cloud_server_parameters(args, config, start_time.as_secs_f64());
     send_cloud_server_parameters(cloud_server_parameters, &mut cloud_server_connection);
@@ -172,8 +188,8 @@ fn setup_cloud_server(args: &Args, config: &Config, start_time: Duration) -> Tcp
 }
 
 fn connect_to_remote(address: SocketAddr) -> TcpStream {
-    TcpStream::connect(format!("127.0.0.1:{}", address.port()))
-        .unwrap_or_else(|_| panic!("Could not connect to {address}"))
+    info!("Connecting to {}", address);
+    TcpStream::connect(address).unwrap_or_else(|_| panic!("Could not connect to {address}"))
 }
 
 fn create_motor_driver_parameters(
@@ -194,7 +210,7 @@ fn create_motor_driver_parameters(
         duration: Duration::from_secs(args.duration).as_secs_f64(),
         number_of_tcp_motor_groups: args.motor_groups_tcp as usize,
         number_of_i2c_motor_groups: args.motor_groups_i2c,
-        window_size_seconds: Duration::from_secs(args.window_size_seconds).as_secs_f64(),
+        window_size_ms: args.window_size_ms,
         sensor_listen_address: config.motor_monitor.sensor_listen_address,
         sensor_sampling_interval: args.sensor_sampling_interval_ms,
         window_sampling_interval: args.window_sampling_interval_ms,

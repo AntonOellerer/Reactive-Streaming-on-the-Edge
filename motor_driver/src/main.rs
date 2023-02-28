@@ -153,7 +153,7 @@ fn handle_motor_monitor(
                 .number_of_i2c_motor_groups
                 .to_string(),
         )
-        .arg(motor_monitor_parameters.window_size.to_string())
+        .arg(motor_monitor_parameters.window_size_ms.to_string())
         .arg(motor_monitor_parameters.sensor_listen_address.to_string())
         .arg(
             motor_monitor_parameters
@@ -192,7 +192,7 @@ fn control_sensor(sensor_driver_address: SocketAddr, sensor_parameters: SensorPa
             write_sensor_parameters(&sensor_parameters, &mut sensor_stream);
         }
         Err(e) => {
-            error!("Failed to connect: {}", e);
+            error!("Failed to connect to {sensor_driver_address}: {}", e);
         }
     }
 }
@@ -226,7 +226,7 @@ fn create_motor_monitor_parameters(
         request_processing_model: motor_driver_parameters.request_processing_model,
         number_of_tcp_motor_groups: motor_driver_parameters.number_of_tcp_motor_groups,
         number_of_i2c_motor_groups: motor_driver_parameters.number_of_i2c_motor_groups,
-        window_size: motor_driver_parameters.window_size_seconds,
+        window_size_ms: motor_driver_parameters.window_size_ms,
         sensor_listen_address: motor_driver_parameters.sensor_listen_address,
         motor_monitor_listen_address: motor_driver_parameters.motor_monitor_listen_address,
         sensor_sampling_interval: motor_driver_parameters.sensor_sampling_interval,

@@ -130,8 +130,9 @@ fn execute_reactive_streaming_procedure(
         .unwrap();
     let sensor_listen_address = motor_monitor_parameters.sensor_listen_address;
     create(move |subscriber| {
-        info!("Listening on {sensor_listen_address}");
-        match TcpListener::bind(sensor_listen_address) {
+        let listen_address = format!("0.0.0.0:{}", sensor_listen_address.port());
+        info!("Listening on {}", listen_address);
+        match TcpListener::bind(listen_address) {
             Ok(listener) => {
                 info!("Bound listener on sensor listener address {sensor_listen_address}");
                 for _ in 0..total_number_of_sensors {
@@ -163,7 +164,7 @@ fn execute_reactive_streaming_procedure(
     .subscribe_on(read_message_pool)
     .sliding_window(
         Duration::from_millis(motor_monitor_parameters.window_sampling_interval as u64),
-        Duration::from_secs_f64(motor_monitor_parameters.window_size),
+        Duration::from_millis(motor_monitor_parameters.window_size_ms),
         |timed_sensor_message: &SensorMessage| {
             Duration::from_secs_f64(timed_sensor_message.timestamp)
         },

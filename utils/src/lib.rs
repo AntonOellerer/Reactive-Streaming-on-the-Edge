@@ -173,7 +173,7 @@ pub fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParamet
             .expect("Did not receive at least 5 arguments")
             .parse()
             .expect("Could not parse number_of_motor_groups successfully"),
-        window_size: arguments
+        window_size_ms: arguments
             .get(6)
             .expect("Did not receive at least 6 arguments")
             .parse()

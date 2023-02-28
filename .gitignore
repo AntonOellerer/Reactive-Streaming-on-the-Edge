@@ -172,6 +172,7 @@ test_driver/alert_delays.csv
 *archive.csv
 bench_executor/*.csv
 bench_executor/*.zip
+data_aggregator/*.zip
 network_config.toml
 test_driver/*.csv
 data_aggregator/*.csv

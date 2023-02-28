@@ -1,11 +1,12 @@
 extern crate core;
 
-use bollard::models::{Network, Service};
+use bollard::errors::Error;
+use bollard::models::{Network, Service, ServiceUpdateResponse};
 use bollard::network::InspectNetworkOptions;
 use bollard::service::{InspectServiceOptions, UpdateServiceOptions};
 use bollard::{ClientVersion, Docker};
 use data_transfer_objects::{NetworkConfig, RequestProcessingModel};
-use futures::FutureExt;
+use futures::{FutureExt, StreamExt};
 use log::{debug, info, warn};
 use serde::Deserialize;
 use std::fs::OpenOptions;
@@ -23,9 +24,10 @@ struct Config {
     motor_groups_tcp: Vec<u16>,
     durations: Vec<u64>,
     request_processing_models: Vec<RequestProcessingModel>,
-    window_size_seconds: Vec<u64>,
-    sampling_interval_ms: Vec<u32>,
-    _thread_pool_sizes: Vec<usize>,
+    window_size_ms: Vec<u64>,
+    sensor_sampling_interval_ms: Vec<u32>,
+    window_sampling_interval_ms: Vec<u32>,
+    thread_pool_sizes: Vec<usize>,
 }
 
 trait RAIIConfig {
@@ -89,8 +91,12 @@ async fn main() {
     .unwrap();
     let mut network_config = restart_system(&docker).await;
     for duration in &config.durations {
-        for window_size_seconds in &config.window_size_seconds {
-            for sampling_interval_ms in &config.sampling_interval_ms {
+        for window_size_ms in &config.window_size_ms {
+            // for window_sampling_interval in &config.window_sampling_interval_ms {
+            let window_sampling_interval = window_size_ms;
+            for sensor_sampling_interval in &config.sensor_sampling_interval_ms {
+                // let window_size_ms = sensor_sampling_interval * 5;
+                // let window_sampling_interval = window_size_ms;
                 // for thread_pool_size in &config.thread_pool_sizes {
                 for no_motor_groups in &config.motor_groups_tcp {
                     scale_service(*no_motor_groups, &docker, &mut network_config).await;
@@ -99,7 +105,7 @@ async fn main() {
                             RequestProcessingModel::ReactiveStreaming => no_motor_groups * 40,
                             RequestProcessingModel::ClientServer => no_motor_groups * 4 + 1,
                         } as usize;
-                        let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_seconds}_{sampling_interval_ms}_{thread_pool_size}_{}", request_processing_model.to_string());
+                        let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_ms}_{window_sampling_interval}_{sensor_sampling_interval}_{thread_pool_size}_{}", request_processing_model.to_string());
                         let resource_usage_file_name = format!("{file_name_base}_ru.csv");
                         let mut resource_usage_file = OpenOptions::new()
                             .create(true)
@@ -119,12 +125,13 @@ async fn main() {
                             lines += 1;
                         }
                         for i in (lines - 1)..config.repetitions as usize {
-                            info!("{i} {no_motor_groups} {duration} {window_size_seconds} {sampling_interval_ms} {thread_pool_size} {}", request_processing_model.to_string());
+                            info!("{i} {no_motor_groups} {duration} {window_size_ms} {window_sampling_interval} {sensor_sampling_interval} {thread_pool_size} {}", request_processing_model.to_string());
                             let results = execute_test_run(
                                 *no_motor_groups,
                                 *duration,
-                                *window_size_seconds,
-                                *sampling_interval_ms,
+                                *window_size_ms,
+                                *window_sampling_interval as u32,
+                                *sensor_sampling_interval,
                                 thread_pool_size,
                                 *request_processing_model,
                             );
@@ -139,10 +146,11 @@ async fn main() {
                                 }
                             }
                         }
-                        // }
                     }
                 }
             }
+            // }
+            // }
         }
     }
 }
@@ -179,7 +187,7 @@ async fn setup_network_config(docker: &Docker) -> NetworkConfig {
     }
     NetworkConfig::new(
         cloud_socket_address.expect("Could not retrieve cloud server socket address"),
-        monitor_socket_address.expect("Could not get motor monitor socket address"),
+        monitor_socket_address.unwrap_or(IpAddr::from_str("10.0.1.10").unwrap()),
         get_sensor_ips(
             docker
                 .inspect_network(
@@ -262,8 +270,9 @@ fn update_spec(no_replicas: u16, current: &mut Service) {
 fn execute_test_run(
     no_motor_groups: u16,
     duration: u64,
-    window_size_seconds: u64,
-    sampling_interval_ms: u32,
+    window_size_ms: u64,
+    window_sampling_interval_ms: u32,
+    sensor_sampling_interval_ms: u32,
     thread_pool_size: usize,
     request_processing_model: RequestProcessingModel,
 ) -> Result<(String, String, String), ()> {
@@ -277,10 +286,12 @@ fn execute_test_run(
         .arg(no_motor_groups.to_string())
         .arg("--duration")
         .arg(duration.to_string())
-        .arg("--window-size-seconds")
-        .arg(window_size_seconds.to_string())
-        .arg("--sampling-interval-ms")
-        .arg(sampling_interval_ms.to_string())
+        .arg("--window-size-ms")
+        .arg(window_size_ms.to_string())
+        .arg("--window-sampling-interval-ms")
+        .arg(window_sampling_interval_ms.to_string())
+        .arg("--sensor-sampling-interval-ms")
+        .arg(sensor_sampling_interval_ms.to_string())
         .arg("--thread-pool-size")
         .arg(thread_pool_size.to_string())
         .arg(request_processing_model.to_string())
@@ -314,41 +325,48 @@ fn execute_test_run(
 
 async fn restart_system(docker: &Docker) -> NetworkConfig {
     warn!("Restarting system");
-    docker
-        .list_containers::<String>(None)
-        .then(|containers| async {
-            let containers = containers.expect("Could not get containers");
-            let container_names: Vec<&String> = containers
-                .iter()
-                .map(|container| {
-                    container
-                        .names
-                        .as_ref()
-                        .expect("Could not get container names")
-                })
-                .filter_map(|container_names| {
-                    container_names.iter().find(|container_name| {
-                        container_name.contains("bench_system")
-                            && !container_name.contains("sensor")
-                    })
-                })
-                .collect();
-            for container_name in container_names.iter() {
-                let container_name: String = container_name.chars().skip(1).collect();
-                info!("Stopping {container_name}");
-                let _ = docker.stop_container(&container_name, None).await;
-            }
-            for container_name in container_names.iter() {
-                let mut i = 0;
-                while i < 30 && !service_container_restarted(container_name, docker).await {
-                    debug!("Waiting on {container_name} to run");
-                    thread::sleep(Duration::from_secs(1));
-                    i += 1;
-                }
-            }
-        })
-        .await;
+    restart_service(docker, "bench_system_monitor")
+        .await
+        .unwrap();
+    restart_service(docker, "bench_system_cloud_server")
+        .await
+        .unwrap();
+    thread::sleep(Duration::from_secs(10));
     setup_network_config(docker).await
+}
+
+async fn restart_service(
+    docker: &Docker,
+    service_name: &str,
+) -> Result<ServiceUpdateResponse, Error> {
+    let execution_chain = docker
+        .inspect_service(service_name, None::<InspectServiceOptions>)
+        .then(|current| {
+            let mut current = current.unwrap();
+            let options = UpdateServiceOptions {
+                version: current.version.as_mut().unwrap().index.unwrap(),
+                ..Default::default()
+            };
+            update_spec(0, &mut current);
+            info!("Scaling down");
+            docker.update_service(service_name, current.spec.unwrap(), options, None)
+        })
+        .then(|options| {
+            thread::sleep(Duration::from_secs(10));
+            options.unwrap();
+            docker.inspect_service(service_name, None::<InspectServiceOptions>)
+        })
+        .then(|current| {
+            let mut current = current.unwrap();
+            let options = UpdateServiceOptions {
+                version: current.version.as_mut().unwrap().index.unwrap(),
+                ..Default::default()
+            };
+            update_spec(1, &mut current);
+            info!("Scaling up");
+            docker.update_service(service_name, current.spec.unwrap(), options, None)
+        });
+    execution_chain.await
 }
 
 async fn service_container_restarted(container_name: &str, docker: &Docker) -> bool {

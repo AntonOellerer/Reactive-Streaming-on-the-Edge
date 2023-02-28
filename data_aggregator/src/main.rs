@@ -1,15 +1,19 @@
-use data_transfer_objects::RequestProcessingModel;
+use std::fs;
+use std::fs::{read_dir, DirEntry};
+use std::ops::Range;
+use std::str::FromStr;
+
 use plotters::prelude::{
-    ChartBuilder, ErrorBar, IntoDrawingArea, PathElement, SVGBackend, BLACK, BLUE, RED, WHITE,
+    ChartBuilder, ErrorBar, IntoDrawingArea, IntoLogRange, PathElement, SVGBackend, BLACK, BLUE,
+    RED, WHITE,
 };
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
 use polars::prelude::SerReader;
 use polars::prelude::{ChunkVar, Series};
 use polars::prelude::{CsvReader, Schema};
-use std::fs;
-use std::fs::{read_dir, DirEntry};
-use std::str::FromStr;
+
+use data_transfer_objects::RequestProcessingModel;
 
 const RAW_DATA_PATH: &str = "../bench_executor/";
 
@@ -32,11 +36,11 @@ fn aggregate_processing_time(processing_models: &Vec<RequestProcessingModel>) {
         let mut aggregates: ResultVector = vec![];
         let data_frames = get_data_frames(processing_model, "ru");
         for (file_name, data_frame) in data_frames {
-            let no_motor_groups = get_number_of_motor_groups(file_name);
+            let independent_variable = get_independent_variable(file_name);
             let total_time = &(&(&data_frame["utime"] + &data_frame["stime"])
                 + &data_frame["cutime"])
                 + &data_frame["cstime"];
-            append_aggregates(&mut aggregates, no_motor_groups, &total_time);
+            append_aggregates(&mut aggregates, independent_variable, &total_time);
         }
         write_results_as_csv(
             &mut aggregates,
@@ -53,9 +57,9 @@ fn aggregate_memory_usage(processing_models: &Vec<RequestProcessingModel>) {
         let mut aggregates: ResultVector = vec![];
         let data_frames = get_data_frames(processing_model, "ru");
         for (file_name, data_frame) in data_frames {
-            let no_motor_groups = get_number_of_motor_groups(file_name);
+            let independet_variable = get_independent_variable(file_name);
             let vmhwm = &data_frame["vmhwm"];
-            append_aggregates(&mut aggregates, no_motor_groups, vmhwm);
+            append_aggregates(&mut aggregates, independet_variable, vmhwm);
         }
         write_results_as_csv(
             &mut aggregates,
@@ -73,7 +77,7 @@ fn aggregate_alert_delays(processing_models: &Vec<RequestProcessingModel>) {
         let dir_entries = get_relevant_files(processing_model, "ad");
         for dir_entry in dir_entries {
             let no_motor_groups =
-                get_number_of_motor_groups(dir_entry.file_name().into_string().unwrap());
+                get_independent_variable(dir_entry.file_name().into_string().unwrap());
             let series = read_csv_to_series(dir_entry);
             append_aggregates(&mut aggregates, no_motor_groups, &series);
         }
@@ -93,7 +97,7 @@ fn aggregate_alert_failures(processing_models: &Vec<RequestProcessingModel>) {
         let dir_entries = get_relevant_files(processing_model, "af");
         for dir_entry in dir_entries {
             let no_motor_groups =
-                get_number_of_motor_groups(dir_entry.file_name().into_string().unwrap());
+                get_independent_variable(dir_entry.file_name().into_string().unwrap());
             let series = read_csv_to_series(dir_entry);
             append_aggregates(&mut aggregates, no_motor_groups, &series);
         }
@@ -117,13 +121,13 @@ fn read_csv_to_series(dir_entry: DirEntry) -> Series {
     series
 }
 
-fn get_number_of_motor_groups(file_name: String) -> i32 {
+fn get_independent_variable(file_name: String) -> i32 {
     let motor_groups = file_name
         .split('_')
-        .next()
+        .nth(2)
         .expect("Resource usage file should start with the number of motor groups")
         .parse::<i32>()
-        .expect("First number of file should be parsable to number of motor groups");
+        .expect("nth number should be parsable to integer");
     motor_groups
 }
 
@@ -221,14 +225,11 @@ fn plot_aggregate_data(
         .titled(&data_name, ("sans-serif", 40))
         .unwrap();
     let mut chart = ChartBuilder::on(&root_drawing_area)
-        .margin(15)
+        .margin(25)
         .set_left_and_bottom_label_area_size(20)
         .build_cartesian_2d(
-            0..64,
-            0.0..processing_model_runs
-                .last()
-                .and_then(|model_run| model_run.1.last().map(|run| run.3))
-                .unwrap_or(0.0),
+            get_independent_range(&processing_model_runs).log_scale(),
+            get_dependent_range(&processing_model_runs),
         )
         .unwrap();
     chart.configure_mesh().draw().unwrap();
@@ -257,4 +258,37 @@ fn plot_aggregate_data(
         .border_style(&BLACK)
         .draw()
         .unwrap();
+}
+
+fn get_independent_range(
+    processing_model_runs: &[(RequestProcessingModel, ResultVector)],
+) -> Range<i32> {
+    let independent_averages = processing_model_runs
+        .iter()
+        .flat_map(|(_, results)| results)
+        .map(|result| result.0);
+    independent_averages
+        .clone()
+        .min()
+        .expect("At least one measurement should be present")
+        ..independent_averages
+            .max()
+            .expect("At least one measurement should be present")
+}
+
+fn get_dependent_range(
+    processing_model_runs: &[(RequestProcessingModel, ResultVector)],
+) -> Range<f64> {
+    let independent_averages = processing_model_runs
+        .iter()
+        .flat_map(|(_, results)| results);
+    // independent_averages
+    //     .clone()
+    //     .map(|result| result.2 - result.4)
+    //     .reduce(f64::min)
+    //     .expect("At least one measurement should be present")
+    0f64..independent_averages
+        .map(|result| result.2 + result.4)
+        .reduce(f64::max)
+        .expect("At least one measurement should be present")
 }
