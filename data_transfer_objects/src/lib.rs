@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 pub enum RequestProcessingModel {
     ReactiveStreaming,
     ClientServer,
+    SpringQL,
 }
 
 #[cfg(feature = "std")]
@@ -28,6 +29,7 @@ impl FromStr for RequestProcessingModel {
         match s {
             "ReactiveStreaming" => Ok(RequestProcessingModel::ReactiveStreaming),
             "ClientServer" => Ok(RequestProcessingModel::ClientServer),
+            "SpringQL" => Ok(RequestProcessingModel::SpringQL),
             _ => Err(()),
         }
     }
@@ -39,6 +41,7 @@ impl ToString for RequestProcessingModel {
         match self {
             RequestProcessingModel::ReactiveStreaming => "ReactiveStreaming",
             RequestProcessingModel::ClientServer => "ClientServer",
+            RequestProcessingModel::SpringQL => "SpringQL",
         }
         .to_string()
     }

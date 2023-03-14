@@ -1,0 +1,18 @@
+[package]
+name = "motor_monitor_sql"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+data_transfer_objects = { path = "../data_transfer_objects" }
+utils = { path = "../utils" }
+postcard = { version = "1.0.2", features = ["alloc"] }
+env_logger = "0.10.0"
+log = "0.4.17"
+springql = "0.18.1"
+rx_rust_mp = "0.7.2"
+chrono = "0.4.24"
+futures = { version = "0.3.25", features = ["thread-pool"]}
+

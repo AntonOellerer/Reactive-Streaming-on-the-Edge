@@ -76,7 +76,7 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
 
 fn get_monitor_connection(sensor_parameters: &SensorParameters) -> TcpStream {
     let connect_to = format!(
-        "bench_system_monitor:{}",
+        "127.0.0.1:{}",
         sensor_parameters.motor_monitor_listen_address.port()
     )
     .to_socket_addrs()

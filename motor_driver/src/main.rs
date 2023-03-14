@@ -202,6 +202,7 @@ fn create_run_command(request_processing_model: RequestProcessingModel) -> Comma
     let dir = match request_processing_model {
         RequestProcessingModel::ReactiveStreaming => "../motor_monitor_rx",
         RequestProcessingModel::ClientServer => "../motor_monitor_cs",
+        RequestProcessingModel::SpringQL => "../motor_monitor_sql",
     };
     let mut command = Command::new("cargo");
     command.current_dir(dir).arg("run").arg("--");

@@ -38,11 +38,11 @@ struct Args {
     duration: u64,
 
     /// Request Processing Model to use
-    #[clap(value_enum, value_parser = clap::builder::PossibleValuesParser::new(["ClientServer", "ReactiveStreaming"]).map(| s | parse_request_processing_model(& s)))]
+    #[clap(value_enum, value_parser = clap::builder::PossibleValuesParser::new(["ClientServer", "ReactiveStreaming", "SpringQL"]).map(| s | parse_request_processing_model(& s)))]
     request_processing_model: RequestProcessingModel,
 
     /// Size of the window averaged for determining sensor reading value
-    #[clap(long, value_parser, default_value_t = 3)]
+    #[clap(long, value_parser, default_value_t = 3000)]
     window_size_ms: u64,
 
     /// Window sampling interval in milliseconds
@@ -157,7 +157,7 @@ fn setup_motor_driver(args: &Args, config: &Config, start_time: Duration) -> Tcp
     let mut motor_driver_connection = connect_to_remote(
         SocketAddr::from_str(
             format!(
-                "192.168.178.51:{}",
+                "127.0.0.1:{}",
                 config.motor_driver.test_driver_listen_address.port()
             )
             .as_str(),

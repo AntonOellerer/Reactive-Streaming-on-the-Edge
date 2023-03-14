@@ -8,6 +8,7 @@ members = [
 	"motor_driver",
 	"motor_monitor_cs",
 	"motor_monitor_rx",
+	"motor_monitor_sql",
 	"pico_sensor",
 	"sensor",
 	"sensor_driver",
