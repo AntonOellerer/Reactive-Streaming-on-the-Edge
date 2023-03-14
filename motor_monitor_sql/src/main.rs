@@ -2,7 +2,7 @@ use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::ops::{BitAnd, Shr};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc, RwLock};
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
 
@@ -63,7 +63,7 @@ impl MotorData {
     }
 
     fn get_timestamp_f64(row: &SpringSinkRow) -> f64 {
-        Duration::from_micros(
+        Duration::from_millis(
             NaiveDateTime::parse_from_str(
                 row.get_not_null_by_index::<String>(0)
                     .expect("Could not get timestamp")
@@ -100,7 +100,7 @@ fn execute_procedure(motor_monitor_parameters: MotorMonitorParameters) {
     let pipeline = setup_processing_pipeline(motor_monitor_parameters);
     let p_c = pipeline.clone();
     handle_list.push(pool.schedule(|| transfer_data(rx, p_c)));
-    handle_list.push(pool.schedule(move || evaluate_results(pipeline, motor_monitor_parameters)));
+    handle_list.extend(evaluate_results(pipeline, motor_monitor_parameters, pool));
     wait_on_complete(handle_list);
 }
 
@@ -109,6 +109,10 @@ fn setup_processing_pipeline(
 ) -> Arc<SpringPipeline> {
     let mut config = SpringConfig::default();
     config.web_console.enable_report_post = true;
+    config.worker.n_source_worker_threads =
+        motor_monitor_parameters.number_of_tcp_motor_groups as u16 * 4; // one per source
+    config.worker.n_generic_worker_threads =
+        motor_monitor_parameters.thread_pool_size as u16 - config.worker.n_source_worker_threads; // rest for the other tasks
     let pipeline = Arc::new(SpringPipeline::new(&config).unwrap());
     for motor_id in 0..motor_monitor_parameters.number_of_tcp_motor_groups {
         pipeline
@@ -347,25 +351,51 @@ fn handle_message(message: SensorMessage, pipeline: Arc<SpringPipeline>) {
 fn evaluate_results(
     pipeline: Arc<SpringPipeline>,
     motor_monitor_parameters: MotorMonitorParameters,
-) {
-    let mut cloud_server =
-        TcpStream::connect(motor_monitor_parameters.motor_monitor_listen_address)
-            .expect("Could not open connection to cloud server");
-    let motor_ages: Arc<RwLock<Vec<Duration>>> = Arc::new(RwLock::new(
-        (0..motor_monitor_parameters.number_of_tcp_motor_groups)
-            .map(|_| utils::get_now_duration())
-            .collect(),
-    ));
-    let end_time = Duration::from_secs_f64(motor_monitor_parameters.start_time)
-        + Duration::from_secs_f64(motor_monitor_parameters.duration);
-    loop {
-        for motor_id in 0..motor_monitor_parameters.number_of_tcp_motor_groups {
+    pool: ThreadPool,
+) -> Vec<RemoteHandle<()>> {
+    let cloud_server = TcpStream::connect(motor_monitor_parameters.motor_monitor_listen_address)
+        .expect("Could not open connection to cloud server");
+    let mut handle_list = Vec::new();
+    for motor_id in 0..motor_monitor_parameters.number_of_tcp_motor_groups {
+        let cloud_server = cloud_server
+            .try_clone()
+            .expect("Could not clone TCP stream");
+        let pipeline = pipeline.clone();
+        handle_list.push(pool.schedule(move || {
             handle_pipeline_output(
                 motor_id,
                 pipeline.clone(),
-                motor_ages.clone(),
-                &mut cloud_server,
+                &motor_monitor_parameters,
+                cloud_server,
             )
+        }))
+    }
+    handle_list
+}
+
+fn handle_pipeline_output(
+    motor_id: usize,
+    pipeline: Arc<SpringPipeline>,
+    motor_monitor_parameters: &MotorMonitorParameters,
+    mut cloud_server: TcpStream,
+) {
+    let end_time = Duration::from_secs_f64(motor_monitor_parameters.start_time)
+        + Duration::from_secs_f64(motor_monitor_parameters.duration);
+    let mut motor_age = utils::get_now_duration();
+    let mut last_message = 0f64;
+    loop {
+        loop {
+            match pipeline.pop_non_blocking(format!("motor_averages_{motor_id}").as_str()) {
+                Ok(Some(row)) => {
+                    let motor_data = MotorData::from_springql_row(row);
+                    if last_message != motor_data.timestamp {
+                        last_message = motor_data.timestamp;
+                        motor_age = handle_row(motor_data, motor_age, &mut cloud_server);
+                    }
+                }
+                Err(e) => error!("{e}"),
+                _ => break,
+            }
         }
         thread::sleep(Duration::from_millis(
             (motor_monitor_parameters.sensor_sampling_interval / 2) as u64,
@@ -376,45 +406,26 @@ fn evaluate_results(
     }
 }
 
-fn handle_pipeline_output(
-    motor_id: usize,
-    pipeline: Arc<SpringPipeline>,
-    motor_ages: Arc<RwLock<Vec<Duration>>>,
-    cloud_server: &mut TcpStream,
-) {
-    loop {
-        match pipeline.pop_non_blocking(format!("motor_averages_{motor_id}").as_str()) {
-            Ok(Some(row)) => handle_row(row, motor_ages.clone(), cloud_server),
-            Err(e) => error!("{e}"),
-            _ => return,
-        }
-    }
-}
-
 fn handle_row(
-    row: SpringSinkRow,
-    motor_ages: Arc<RwLock<Vec<Duration>>>,
+    motor_data: MotorData,
+    motor_age: Duration,
     cloud_server: &mut TcpStream,
-) {
-    let motor_data = MotorData::from_springql_row(row);
+) -> Duration {
+    debug!("{motor_data:?}");
     if motor_data.is_some() {
-        let vec = motor_ages.read().unwrap();
-        let motor_age = vec[motor_data.motor_id as usize];
-        drop(vec);
         if let Some(motor_failure) = utils::rule_violated(
             motor_data.air_temperature.unwrap() as f64,
             motor_data.process_temperature.unwrap() as f64,
             motor_data.rotational_speed.unwrap() as f64,
             motor_data.torque.unwrap() as f64,
-            motor_age,
+            utils::get_now_duration() - motor_age,
         ) {
-            let now = utils::get_now_duration();
-            let mut vec = motor_ages.write().unwrap();
-            vec[motor_data.motor_id as usize] = now;
-            drop(vec);
             send_motor_alert(motor_failure, motor_data, cloud_server);
+            let now = utils::get_now_duration();
+            return now;
         }
     }
+    motor_age
 }
 
 fn send_motor_alert(
