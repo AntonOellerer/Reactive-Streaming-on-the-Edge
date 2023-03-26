@@ -14,6 +14,15 @@ pub struct MotorGroupSensorsBuffers {
 }
 
 impl MotorGroupSensorsBuffers {
+    pub(crate) fn is_some(&self) -> bool {
+        self.air_temperature_sensor.len() > 0
+            && self.process_temperature_sensor.len() > 0
+            && self.rotational_speed_sensor.len() > 0
+            && self.torque_sensor.len() > 0
+    }
+}
+
+impl MotorGroupSensorsBuffers {
     pub fn new(window_size: Duration) -> MotorGroupSensorsBuffers {
         MotorGroupSensorsBuffers {
             air_temperature_sensor: SlidingWindow::new(window_size),

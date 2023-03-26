@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use env_logger::Target;
 use log::{debug, info};
 use postcard::to_allocvec_cobs;
@@ -5,7 +6,7 @@ use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use std::io::{BufRead, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
@@ -21,12 +22,7 @@ fn main() {
     let sensor_parameters: SensorParameters = get_sensor_parameters(&arguments);
     let mut rng = SmallRng::seed_from_u64(sensor_parameters.id as u64);
 
-    let stream = get_monitor_connection(&sensor_parameters);
-    info!(
-        "Connected to {}",
-        sensor_parameters.motor_monitor_listen_address
-    );
-    execute_client_server_procedure(data_path, &sensor_parameters, &mut rng, stream);
+    execute_client_server_procedure(data_path, &sensor_parameters, &mut rng);
     info!("Finished benchmark run");
 }
 
@@ -76,27 +72,33 @@ fn get_sensor_parameters(arguments: &[String]) -> SensorParameters {
 
 fn get_monitor_connection(sensor_parameters: &SensorParameters) -> TcpStream {
     let connect_to = format!(
-        "127.0.0.1:{}",
-        sensor_parameters.motor_monitor_listen_address.port()
+        "{}:{}",
+        get_monitor_address(sensor_parameters.motor_monitor_listen_address.ip()),
+        sensor_parameters.motor_monitor_listen_address.port(),
     )
     .to_socket_addrs()
     .unwrap()
     .next()
     .unwrap();
     thread::sleep(Duration::from_secs(2));
-    TcpStream::connect_timeout(&connect_to, Duration::from_secs(5)).unwrap_or_else(|e| {
-        panic!(
-            "Could not connect to {}: {e}",
-            sensor_parameters.motor_monitor_listen_address
-        )
-    })
+    TcpStream::connect_timeout(&connect_to, Duration::from_secs(5))
+        .unwrap_or_else(|e| panic!("Could not connect to {connect_to:?}: {e}"))
+}
+
+#[cfg(debug_assertions)]
+fn get_monitor_address(addr: IpAddr) -> String {
+    addr.to_string()
+}
+
+#[cfg(not(debug_assertions))]
+fn get_monitor_address(_addr: IpAddr) -> String {
+    "bench_system_monitor".to_string()
 }
 
 fn execute_client_server_procedure(
     data_path: &Path,
     sensor_parameters: &SensorParameters,
     mut rng: &mut SmallRng,
-    mut stream: TcpStream,
 ) {
     let start_time = Duration::from_secs_f64(sensor_parameters.start_time);
     let end_time = start_time + Duration::from_secs_f64(sensor_parameters.duration);
@@ -105,6 +107,11 @@ fn execute_client_server_procedure(
         (start_time - utils::get_now_duration()).as_secs_f64()
     );
     thread::sleep(start_time - utils::get_now_duration());
+    let mut stream = get_monitor_connection(sensor_parameters);
+    info!(
+        "Connected to {}",
+        sensor_parameters.motor_monitor_listen_address
+    );
     while utils::get_now_duration() < end_time {
         let sensor_reading = fs::read(data_path)
             .expect("Failure reading sensor data")
@@ -132,9 +139,35 @@ fn send_sensor_reading(
         timestamp: utils::get_now_duration().as_secs_f64(),
     };
     debug!("Read {sensor_reading} at {}", message.timestamp);
-    let vec: Vec<u8> =
-        to_allocvec_cobs(&message).expect("Could not write sensor reading to Vec<u8>");
+    let vec: Vec<u8> = match sensor_parameters.request_processing_model {
+        RequestProcessingModel::ReactiveStreaming => {
+            to_allocvec_cobs(&message).expect("Could not write sensor reading to Vec<u8>")
+        }
+        RequestProcessingModel::ClientServer => {
+            to_allocvec_cobs(&message).expect("Could not write sensor reading to Vec<u8>")
+        }
+        RequestProcessingModel::SpringQL => jsonify(message).as_bytes().to_vec(),
+    };
     stream
         .write_all(&vec)
         .expect("Could not write sensor reading bytes to TcpStream");
+}
+
+fn jsonify(message: SensorMessage) -> String {
+    format!(
+        "{{\"ts\": \"{}\", \"reading\": {}, \"sensor_id\": {}}}\n",
+        to_rfc3339(message),
+        message.reading,
+        message.sensor_id
+    )
+}
+
+fn to_rfc3339(message: SensorMessage) -> String {
+    NaiveDateTime::from_timestamp_millis(
+        Duration::from_secs_f64(message.timestamp).as_millis() as i64
+    )
+    .expect("Could not convert f64 to chrono::Duration")
+    .and_local_timezone(chrono::offset::Utc)
+    .unwrap()
+    .to_rfc3339()
 }

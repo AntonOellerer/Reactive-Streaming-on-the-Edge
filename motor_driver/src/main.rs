@@ -96,7 +96,8 @@ fn setup_tcp_sensors(
         let motor_id = index / 4 + no_i2c as usize;
         let sensor_id = index % 4;
         let full_id: u32 = (motor_id as u32).shl(2) + sensor_id as u32;
-        let motor_monitor_listen_address = motor_monitor_parameters.sensor_listen_address;
+        let motor_monitor_listen_address =
+            get_motor_monitor_listen_address(motor_monitor_parameters, sensor_id as u16);
         let sensor_parameters = create_sensor_parameters(
             full_id,
             motor_monitor_listen_address,
@@ -105,6 +106,20 @@ fn setup_tcp_sensors(
         pool.execute(move || {
             control_sensor(sensor_driver_address, sensor_parameters);
         });
+    }
+}
+
+fn get_motor_monitor_listen_address(
+    motor_monitor_parameters: &MotorMonitorParameters,
+    index: u16,
+) -> SocketAddr {
+    match motor_monitor_parameters.request_processing_model {
+        RequestProcessingModel::ReactiveStreaming => motor_monitor_parameters.sensor_listen_address,
+        RequestProcessingModel::ClientServer => motor_monitor_parameters.sensor_listen_address,
+        RequestProcessingModel::SpringQL => SocketAddr::new(
+            motor_monitor_parameters.sensor_listen_address.ip(),
+            motor_monitor_parameters.sensor_listen_address.port() + index,
+        ),
     }
 }
 
@@ -214,6 +229,7 @@ fn create_run_command(request_processing_model: RequestProcessingModel) -> Comma
     let command = match request_processing_model {
         RequestProcessingModel::ReactiveStreaming => "motor_monitor_rx",
         RequestProcessingModel::ClientServer => "motor_monitor_cs",
+        RequestProcessingModel::SpringQL => "motor_monitor_sql",
     };
     Command::new(command)
 }

@@ -10,7 +10,7 @@ use log::{debug, error, info};
 use postcard::to_allocvec_cobs;
 #[cfg(feature = "rpi")]
 use rppal::i2c::I2c;
-use rx_rust_mp::scheduler::Scheduler;
+use scheduler::Scheduler;
 use std::io::Write;
 #[cfg(feature = "rpi")]
 use std::mem::size_of;
@@ -194,16 +194,19 @@ fn handle_message(
     let motor_group_buffers = get_motor_group_buffers(buffers, motor_group_id);
     add_message_to_sensor_buffer(message, sensor_id, motor_group_buffers);
     motor_group_buffers.refresh_caches(Duration::from_secs_f64(message.timestamp));
-    let rule_violated = rules_engine::violated_rule(motor_group_buffers);
-    if let Some(failure) = rule_violated {
-        info!("Found rule violation {failure} in motor {motor_group_id}");
-        let alert = create_alert(motor_group_id, motor_group_buffers.get_time(), failure);
-        let vec: Vec<u8> =
-            to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
-        cloud_server
-            .write_all(&vec)
-            .expect("Could not send motor alert to cloud server");
-        motor_group_buffers.reset();
+    if motor_group_buffers.is_some() {
+        let rule_violated = rules_engine::violated_rule(motor_group_buffers);
+        if let Some(failure) = rule_violated {
+            info!("{motor_group_buffers:?}");
+            info!("Found rule violation {failure} in motor {motor_group_id}");
+            let alert = create_alert(motor_group_id, motor_group_buffers.get_time(), failure);
+            let vec: Vec<u8> =
+                to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
+            cloud_server
+                .write_all(&vec)
+                .expect("Could not send motor alert to cloud server");
+            motor_group_buffers.reset();
+        }
     }
 }
 

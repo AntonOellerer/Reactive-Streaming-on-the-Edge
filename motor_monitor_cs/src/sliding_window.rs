@@ -41,6 +41,10 @@ impl SlidingWindow {
     pub fn iter(&self) -> impl Iterator<Item = &SensorMessage> {
         self.elements.iter()
     }
+
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
 }
 
 impl IntoIterator for SlidingWindow {

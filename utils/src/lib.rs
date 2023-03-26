@@ -2,21 +2,6 @@
 
 use core::f64::consts::PI;
 use core::time::Duration;
-use data_transfer_objects::MotorFailure;
-#[cfg(feature = "std")]
-use data_transfer_objects::{BenchmarkData, BenchmarkDataType};
-#[cfg(feature = "std")]
-use data_transfer_objects::{MotorMonitorParameters, RequestProcessingModel};
-use log::info;
-#[cfg(feature = "std")]
-use log::{debug, error, trace, warn};
-use postcard::accumulator::{CobsAccumulator, FeedResult};
-#[cfg(feature = "std")]
-use postcard::to_allocvec_cobs;
-#[cfg(feature = "std")]
-use procfs::process::Process;
-#[cfg(feature = "std")]
-use serde::Deserialize;
 #[cfg(feature = "std")]
 use std::io::Read;
 #[cfg(feature = "std")]
@@ -29,6 +14,23 @@ use std::str::FromStr;
 use std::time::SystemTime;
 #[cfg(feature = "std")]
 use std::time::UNIX_EPOCH;
+
+use log::info;
+#[cfg(feature = "std")]
+use log::{debug, error, trace, warn};
+use postcard::accumulator::{CobsAccumulator, FeedResult};
+#[cfg(feature = "std")]
+use postcard::to_allocvec_cobs;
+#[cfg(feature = "std")]
+use procfs::process::Process;
+#[cfg(feature = "std")]
+use serde::Deserialize;
+
+use data_transfer_objects::MotorFailure;
+#[cfg(feature = "std")]
+use data_transfer_objects::{BenchmarkData, BenchmarkDataType};
+#[cfg(feature = "std")]
+use data_transfer_objects::{MotorMonitorParameters, RequestProcessingModel};
 
 #[cfg(feature = "std")]
 //todo find way to return error object
@@ -120,7 +122,7 @@ pub fn save_benchmark_readings(id: u32, benchmark_data_type: BenchmarkDataType) 
         .tasks()
         .unwrap()
         .flatten()
-        .map(|task| task.stat().unwrap())
+        .filter_map(|task| task.stat().ok())
         .fold((0, 0), |(stime, utime), task_stat| {
             (stime + task_stat.stime, utime + task_stat.utime)
         });
@@ -206,8 +208,16 @@ pub fn get_motor_monitor_parameters(arguments: &[String]) -> MotorMonitorParamet
     }
 }
 
+/**
+1. heat dissipation failure (HDF) heat dissipation causes a process failure,
+    if the difference between air- and process temperature is below 8.6 K and the tool’s rotational speed is below 1380 rpm
+2. power failure (PWF) the product of torque and rotational speed (in rad/s) equals the power
+    required for the process. If this power is below 3500 W or above 9000 W, the process fails.
+3. overstrain failure (OSF) if the product of tool wear and torque exceeds 11,000 minNm for the L
+    product variant (12,000 for M, 13,000 for H), the process fails due to overstrain.
+ **/
 #[cfg(feature = "std")]
-pub fn rule_violated(
+pub fn sensor_data_indicates_failure(
     air_temperature: f64,
     process_temperature: f64,
     rotational_speed: f64,
@@ -215,12 +225,26 @@ pub fn rule_violated(
     age: Duration,
 ) -> Option<MotorFailure> {
     let rotational_speed_in_rad = rpm_to_rad(rotational_speed);
-    if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
+    relevant_data_indicates_failure(
+        air_temperature - process_temperature,
+        rotational_speed,
+        torque * rotational_speed_in_rad,
+        age.as_secs_f64() * torque,
+    )
+}
+
+#[cfg(feature = "std")]
+pub fn relevant_data_indicates_failure(
+    temp_diff: f64,
+    rotational_speed: f64,
+    power: f64,
+    strain: f64,
+) -> Option<MotorFailure> {
+    if temp_diff.abs() < 8.6 && rotational_speed < 1380.0 {
         Some(MotorFailure::HeatDissipationFailure)
-    } else if torque * rotational_speed_in_rad < 3500.0 || torque * rotational_speed_in_rad > 9000.0
-    {
+    } else if !(3500.0..=9000.0).contains(&power) {
         Some(MotorFailure::PowerFailure)
-    } else if age.as_secs_f64() * torque > 11_000_f64 {
+    } else if strain > 11_000_f64 {
         Some(MotorFailure::OverstrainFailure)
     } else {
         None

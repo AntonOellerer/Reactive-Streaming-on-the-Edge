@@ -267,7 +267,7 @@ fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Op
         torque,
         age.as_secs_f64() * torque.round()
     );
-    utils::rule_violated(
+    utils::sensor_data_indicates_failure(
         air_temperature,
         process_temperature,
         rotational_speed,

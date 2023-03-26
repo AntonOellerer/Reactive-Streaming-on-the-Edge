@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use plotters::prelude::{
     ChartBuilder, ErrorBar, IntoDrawingArea, IntoLogRange, PathElement, SVGBackend, BLACK, BLUE,
-    RED, WHITE,
+    GREEN, RED, WHITE,
 };
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
@@ -16,6 +16,7 @@ use polars::prelude::{CsvReader, Schema};
 use data_transfer_objects::RequestProcessingModel;
 
 const RAW_DATA_PATH: &str = "../bench_executor/";
+const X_LABEL: &'static str = "Window Size";
 
 type ResultVector = Vec<(i32, f64, f64, f64, f64)>;
 
@@ -23,6 +24,7 @@ fn main() {
     let processing_models = vec![
         RequestProcessingModel::ClientServer,
         RequestProcessingModel::ReactiveStreaming,
+        RequestProcessingModel::SpringQL,
     ];
     aggregate_processing_time(&processing_models);
     aggregate_memory_usage(&processing_models);
@@ -232,11 +234,17 @@ fn plot_aggregate_data(
             get_dependent_range(&processing_model_runs),
         )
         .unwrap();
-    chart.configure_mesh().draw().unwrap();
+    chart
+        .configure_mesh()
+        .x_desc(X_LABEL)
+        .y_desc(data_name)
+        .draw()
+        .unwrap();
     for (processing_model, results_vector) in processing_model_runs {
         let style = match processing_model {
             RequestProcessingModel::ReactiveStreaming => RED,
             RequestProcessingModel::ClientServer => BLUE,
+            RequestProcessingModel::SpringQL => GREEN,
         };
         chart
             .draw_series(results_vector.iter().map(|single_run| {

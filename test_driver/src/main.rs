@@ -21,6 +21,10 @@ mod validator;
 const CONFIG_PATH: &str = "resources/config-debug.toml";
 #[cfg(not(debug_assertions))]
 const NETWORK_CONFIG_PATH: &str = "../network_config.toml";
+#[cfg(debug_assertions)]
+const MONITOR_IP: &str = "127.0.0.1";
+#[cfg(not(debug_assertions))]
+const MONITOR_IP: &str = "192.168.178.51";
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -132,7 +136,12 @@ fn get_config() -> Config {
 }
 
 fn execute_benchmark_run(args: &Args, config: &Config) {
-    let start_time = utils::get_now_duration() + Duration::from_secs(config.test_run.start_delay);
+    let start_delay = match args.request_processing_model {
+        RequestProcessingModel::ReactiveStreaming => config.test_run.start_delay,
+        RequestProcessingModel::ClientServer => config.test_run.start_delay,
+        RequestProcessingModel::SpringQL => (args.motor_groups_tcp * 4 * 4) as u64, //each sensor port takes about 4 seconds to open
+    };
+    let start_time = utils::get_now_duration() + Duration::from_secs(start_delay);
 
     let mut motor_driver_connection = setup_motor_driver(args, config, start_time);
     let mut cloud_server_connection = setup_cloud_server(args, config, start_time);
@@ -146,10 +155,10 @@ fn execute_benchmark_run(args: &Args, config: &Config) {
     info!("Saved benchmark results");
     let (alerts, delays) = get_alerts_with_delays(&mut cloud_server_connection);
     info!("Fetched alerts");
-    // let failures = validator::validate_alerts(args, start_time, &alerts);
+    let failures = validator::validate_alerts(args, start_time, &alerts);
     info!("Validated alerts");
     persist_delays(delays);
-    // persist_failures(failures);
+    persist_failures(failures);
     info!("Finished test run");
 }
 
@@ -157,7 +166,8 @@ fn setup_motor_driver(args: &Args, config: &Config, start_time: Duration) -> Tcp
     let mut motor_driver_connection = connect_to_remote(
         SocketAddr::from_str(
             format!(
-                "127.0.0.1:{}",
+                // "192.168.178.51:{}",
+                "{MONITOR_IP}:{}",
                 config.motor_driver.test_driver_listen_address.port()
             )
             .as_str(),

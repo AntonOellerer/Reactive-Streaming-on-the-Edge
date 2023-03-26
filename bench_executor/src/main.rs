@@ -1,14 +1,5 @@
 extern crate core;
 
-use bollard::errors::Error;
-use bollard::models::{Network, Service, ServiceUpdateResponse};
-use bollard::network::InspectNetworkOptions;
-use bollard::service::{InspectServiceOptions, UpdateServiceOptions};
-use bollard::{ClientVersion, Docker};
-use data_transfer_objects::{NetworkConfig, RequestProcessingModel};
-use futures::{FutureExt, StreamExt};
-use log::{debug, info, warn};
-use serde::Deserialize;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::IpAddr;
@@ -17,6 +8,17 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::time::Duration;
 use std::{fs, thread};
+
+use bollard::errors::Error;
+use bollard::models::{Network, Service, ServiceUpdateResponse};
+use bollard::network::InspectNetworkOptions;
+use bollard::service::{InspectServiceOptions, UpdateServiceOptions};
+use bollard::{ClientVersion, Docker};
+use futures::{FutureExt, StreamExt};
+use log::{debug, info, warn};
+use serde::Deserialize;
+
+use data_transfer_objects::{NetworkConfig, RequestProcessingModel};
 
 #[derive(Deserialize)]
 struct Config {
@@ -91,14 +93,19 @@ async fn main() {
     .unwrap();
     let mut network_config = restart_system(&docker).await;
     for duration in &config.durations {
-        for window_size_ms in &config.window_size_ms {
-            // for window_sampling_interval in &config.window_sampling_interval_ms {
-            let window_sampling_interval = window_size_ms;
-            for sensor_sampling_interval in &config.sensor_sampling_interval_ms {
-                // let window_size_ms = sensor_sampling_interval * 5;
-                // let window_sampling_interval = window_size_ms;
-                // for thread_pool_size in &config.thread_pool_sizes {
-                for no_motor_groups in &config.motor_groups_tcp {
+        for no_motor_groups in &config.motor_groups_tcp {
+            for window_size_ms in &config.window_size_ms {
+                // for window_sampling_interval in &config.window_sampling_interval_ms {
+                let window_sampling_interval = window_size_ms;
+                for sensor_sampling_interval in &config.sensor_sampling_interval_ms {
+                    // let window_sampling_interval = sensor_sampling_interval;
+                    // let window_size_ms = sensor_sampling_interval * 5;
+                    // for thread_pool_size in &config.thread_pool_sizes {
+                    if *sensor_sampling_interval as u64 > *window_size_ms
+                        || *window_sampling_interval as u64 > *window_size_ms
+                    {
+                        continue;
+                    }
                     scale_service(*no_motor_groups, &docker, &mut network_config).await;
                     for request_processing_model in &config.request_processing_models {
                         let thread_pool_size = match request_processing_model {
@@ -300,6 +307,11 @@ fn execute_test_run(
         .stdout(Stdio::inherit())
         .spawn()
         .expect("Failure when trying to run test driver");
+    let duration = match request_processing_model {
+        RequestProcessingModel::ReactiveStreaming => duration,
+        RequestProcessingModel::ClientServer => duration,
+        RequestProcessingModel::SpringQL => duration + no_motor_groups as u64 * 4 * 4, //each sensor port takes 4 seconds to open
+    };
     thread::sleep(Duration::from_secs(duration));
     let mut process_finished = child.try_wait();
     for _ in 0..30 {
