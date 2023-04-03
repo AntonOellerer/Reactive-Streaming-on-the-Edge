@@ -19,6 +19,7 @@ pub enum RequestProcessingModel {
     ReactiveStreaming,
     ClientServer,
     SpringQL,
+    ObjectOriented,
 }
 
 #[cfg(feature = "std")]
@@ -30,6 +31,7 @@ impl FromStr for RequestProcessingModel {
             "ReactiveStreaming" => Ok(RequestProcessingModel::ReactiveStreaming),
             "ClientServer" => Ok(RequestProcessingModel::ClientServer),
             "SpringQL" => Ok(RequestProcessingModel::SpringQL),
+            "ObjectOriented" => Ok(RequestProcessingModel::ObjectOriented),
             _ => Err(()),
         }
     }
@@ -42,6 +44,7 @@ impl ToString for RequestProcessingModel {
             RequestProcessingModel::ReactiveStreaming => "ReactiveStreaming",
             RequestProcessingModel::ClientServer => "ClientServer",
             RequestProcessingModel::SpringQL => "SpringQL",
+            RequestProcessingModel::ObjectOriented => "ObjectOriented",
         }
         .to_string()
     }

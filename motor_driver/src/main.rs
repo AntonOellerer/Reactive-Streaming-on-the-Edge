@@ -120,6 +120,10 @@ fn get_motor_monitor_listen_address(
             motor_monitor_parameters.sensor_listen_address.ip(),
             motor_monitor_parameters.sensor_listen_address.port() + index,
         ),
+        RequestProcessingModel::ObjectOriented => SocketAddr::new(
+            motor_monitor_parameters.sensor_listen_address.ip(),
+            motor_monitor_parameters.sensor_listen_address.port() + index,
+        ),
     }
 }
 
@@ -218,6 +222,7 @@ fn create_run_command(request_processing_model: RequestProcessingModel) -> Comma
         RequestProcessingModel::ReactiveStreaming => "../motor_monitor_rx",
         RequestProcessingModel::ClientServer => "../motor_monitor_cs",
         RequestProcessingModel::SpringQL => "../motor_monitor_sql",
+        RequestProcessingModel::ObjectOriented => "../motor_monitor_oo",
     };
     let mut command = Command::new("cargo");
     command.current_dir(dir).arg("run").arg("--");
@@ -230,6 +235,7 @@ fn create_run_command(request_processing_model: RequestProcessingModel) -> Comma
         RequestProcessingModel::ReactiveStreaming => "motor_monitor_rx",
         RequestProcessingModel::ClientServer => "motor_monitor_cs",
         RequestProcessingModel::SpringQL => "motor_monitor_sql",
+        RequestProcessingModel::ObjectOriented => "motor_monitor_oo",
     };
     Command::new(command)
 }

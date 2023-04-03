@@ -1,5 +1,5 @@
 [test_run]
-start_delay = 15
+start_delay = 5
 
 [motor_monitor]
 sensor_listen_address = "127.0.0.1:9000"

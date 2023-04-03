@@ -42,7 +42,7 @@ struct Args {
     duration: u64,
 
     /// Request Processing Model to use
-    #[clap(value_enum, value_parser = clap::builder::PossibleValuesParser::new(["ClientServer", "ReactiveStreaming", "SpringQL"]).map(| s | parse_request_processing_model(& s)))]
+    #[clap(value_enum, value_parser = clap::builder::PossibleValuesParser::new(["ClientServer", "ReactiveStreaming", "SpringQL", "ObjectOriented"]).map(| s | parse_request_processing_model(& s)))]
     request_processing_model: RequestProcessingModel,
 
     /// Size of the window averaged for determining sensor reading value
@@ -140,6 +140,7 @@ fn execute_benchmark_run(args: &Args, config: &Config) {
         RequestProcessingModel::ReactiveStreaming => config.test_run.start_delay,
         RequestProcessingModel::ClientServer => config.test_run.start_delay,
         RequestProcessingModel::SpringQL => (args.motor_groups_tcp * 4 * 4) as u64, //each sensor port takes about 4 seconds to open
+        RequestProcessingModel::ObjectOriented => config.test_run.start_delay,
     };
     let start_time = utils::get_now_duration() + Duration::from_secs(start_delay);
 

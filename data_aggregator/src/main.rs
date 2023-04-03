@@ -2,6 +2,7 @@ use std::fs;
 use std::fs::{read_dir, DirEntry};
 use std::ops::Range;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use plotters::prelude::{
     ChartBuilder, ErrorBar, IntoDrawingArea, IntoLogRange, PathElement, SVGBackend, BLACK, BLUE,
@@ -166,27 +167,30 @@ fn get_data_frames(
     file_name_marker: &str,
 ) -> Vec<(String, DataFrame)> {
     let mut schema = Schema::new();
-    schema.with_column("id".to_string(), DataType::Int64);
-    schema.with_column("utime".to_string(), DataType::Int64);
-    schema.with_column("stime".to_string(), DataType::Int64);
-    schema.with_column("cutime".to_string(), DataType::Int64);
-    schema.with_column("cstime".to_string(), DataType::Int64);
-    schema.with_column("vmhwm".to_string(), DataType::Int64);
-    schema.with_column("vmpeak".to_string(), DataType::Int64);
+    schema.with_column("id".parse().unwrap(), DataType::Int64);
+    schema.with_column("utime".parse().unwrap(), DataType::Int64);
+    schema.with_column("stime".parse().unwrap(), DataType::Int64);
+    schema.with_column("cutime".parse().unwrap(), DataType::Int64);
+    schema.with_column("cstime".parse().unwrap(), DataType::Int64);
+    schema.with_column("vmhwm".parse().unwrap(), DataType::Int64);
+    schema.with_column("vmpeak".parse().unwrap(), DataType::Int64);
+
+    let schema = Arc::new(schema);
 
     get_relevant_files(processing_model, file_name_marker)
         .iter()
         .map(|dir_entry| {
+            let schema = Arc::clone(&schema);
             (
                 dir_entry
                     .file_name()
                     .into_string()
                     .expect("Result file should have UTF-8 name"),
                 CsvReader::from_path(dir_entry.path())
-                    .map(|csv_reader| {
+                    .map(move |csv_reader| {
                         csv_reader
                             .has_header(true)
-                            .with_dtypes(Some(&schema))
+                            .with_dtypes(Some(schema))
                             .finish()
                             .expect("Result file should be readable as csv")
                     })
@@ -245,6 +249,7 @@ fn plot_aggregate_data(
             RequestProcessingModel::ReactiveStreaming => RED,
             RequestProcessingModel::ClientServer => BLUE,
             RequestProcessingModel::SpringQL => GREEN,
+            RequestProcessingModel::ObjectOriented => BLACK,
         };
         chart
             .draw_series(results_vector.iter().map(|single_run| {

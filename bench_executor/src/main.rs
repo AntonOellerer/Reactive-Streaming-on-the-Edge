@@ -112,6 +112,7 @@ async fn main() {
                             RequestProcessingModel::ReactiveStreaming => no_motor_groups * 40,
                             RequestProcessingModel::ClientServer => no_motor_groups * 4 + 1,
                             RequestProcessingModel::SpringQL => no_motor_groups * 12,
+                            RequestProcessingModel::ObjectOriented => no_motor_groups * 5,
                         } as usize;
                         let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_ms}_{window_sampling_interval}_{sensor_sampling_interval}_{thread_pool_size}_{}", request_processing_model.to_string());
                         let resource_usage_file_name = format!("{file_name_base}_ru.csv");
@@ -311,6 +312,7 @@ fn execute_test_run(
         RequestProcessingModel::ReactiveStreaming => duration,
         RequestProcessingModel::ClientServer => duration,
         RequestProcessingModel::SpringQL => duration + no_motor_groups as u64 * 4 * 4, //each sensor port takes 4 seconds to open
+        RequestProcessingModel::ObjectOriented => duration,
     };
     thread::sleep(Duration::from_secs(duration));
     let mut process_finished = child.try_wait();

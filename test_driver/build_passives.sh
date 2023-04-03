@@ -1,8 +1,6 @@
 cd ../motor_monitor_rx/
 cargo build
-cd ../motor_monitor_cs/
-cargo build
-cd ../motor_monitor_sql/
+cd ../motor_monitor_oo/
 cargo build
 cd ../sensor
 cargo build

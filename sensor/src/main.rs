@@ -146,6 +146,9 @@ fn send_sensor_reading(
         RequestProcessingModel::ClientServer => {
             to_allocvec_cobs(&message).expect("Could not write sensor reading to Vec<u8>")
         }
+        RequestProcessingModel::ObjectOriented => {
+            to_allocvec_cobs(&message).expect("Could not write sensor reading to Vec<u8>")
+        }
         RequestProcessingModel::SpringQL => jsonify(message).as_bytes().to_vec(),
     };
     stream
