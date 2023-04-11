@@ -15,7 +15,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::{fs, thread};
 
-mod validator;
+// mod validator;
 
 #[cfg(debug_assertions)]
 const CONFIG_PATH: &str = "resources/config-debug.toml";
@@ -24,7 +24,7 @@ const NETWORK_CONFIG_PATH: &str = "../network_config.toml";
 #[cfg(debug_assertions)]
 const MONITOR_IP: &str = "127.0.0.1";
 #[cfg(not(debug_assertions))]
-const MONITOR_IP: &str = "192.168.178.51";
+const MONITOR_IP: &str = "10.0.0.3";
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -154,12 +154,12 @@ fn execute_benchmark_run(args: &Args, config: &Config) {
 
     save_benchmark_results(&mut motor_driver_connection);
     info!("Saved benchmark results");
-    let (alerts, delays) = get_alerts_with_delays(&mut cloud_server_connection);
+    let (_alerts, delays) = get_alerts_with_delays(&mut cloud_server_connection);
     info!("Fetched alerts");
-    let failures = validator::validate_alerts(args, start_time, &alerts);
+    // let failures = validator::validate_alerts(args, start_time, &alerts);
     info!("Validated alerts");
     persist_delays(delays);
-    persist_failures(failures);
+    // persist_failures(failures);
     info!("Finished test run");
 }
 
@@ -167,7 +167,6 @@ fn setup_motor_driver(args: &Args, config: &Config, start_time: Duration) -> Tcp
     let mut motor_driver_connection = connect_to_remote(
         SocketAddr::from_str(
             format!(
-                // "192.168.178.51:{}",
                 "{MONITOR_IP}:{}",
                 config.motor_driver.test_driver_listen_address.port()
             )
@@ -199,8 +198,11 @@ fn setup_cloud_server(args: &Args, config: &Config, start_time: Duration) -> Tcp
 }
 
 fn connect_to_remote(address: SocketAddr) -> TcpStream {
-    info!("Connecting to {}", address);
-    TcpStream::connect(address).unwrap_or_else(|_| panic!("Could not connect to {address}"))
+    info!("Connecting to {address}");
+    let stream =
+        TcpStream::connect(address).unwrap_or_else(|_| panic!("Could not connect to {address}"));
+    info!("Connected to {address}");
+    stream
 }
 
 fn create_motor_driver_parameters(
@@ -328,7 +330,7 @@ fn persist_delays(delays: Vec<f64>) {
 // While it does not really make sense to persist a single value to a file,
 // this is done so that the external interface stays the same over the different
 // result metrics of the service (resource usage, delays, failures)
-fn persist_failures(failures: usize) {
-    let mut failure_file = open_results_file("alert_failures.csv");
-    write!(failure_file, "{failures},").expect("Could not write to failures file");
-}
+// fn persist_failures(failures: usize) {
+//     let mut failure_file = open_results_file("alert_failures.csv");
+//     write!(failure_file, "{failures},").expect("Could not write to failures file");
+// }

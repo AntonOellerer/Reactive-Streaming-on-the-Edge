@@ -1,18 +1,21 @@
 #![feature(let_chains)]
 
-mod monitor;
-mod sensor;
+use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::ops::{BitAnd, Shl, Shr};
+use std::str::FromStr;
+use std::sync::mpsc;
+use std::time::Duration;
 
-use data_transfer_objects::{Alert, BenchmarkDataType, MotorFailure, MotorMonitorParameters};
 use env_logger::Target;
 use futures::executor::{ThreadPool, ThreadPoolBuilder};
 use futures::future::RemoteHandle;
 use log::{debug, info};
+
+use data_transfer_objects::{Alert, BenchmarkDataType, MotorFailure, MotorMonitorParameters};
 use scheduler::Scheduler;
-use std::net::{SocketAddr, TcpStream};
-use std::ops::{BitAnd, Shl, Shr};
-use std::sync::mpsc;
-use std::time::Duration;
+
+mod monitor;
+mod sensor;
 
 fn main() {
     env_logger::builder().target(Target::Stderr).init();
@@ -61,12 +64,12 @@ fn setup_threads(
         handles.push(thread_pool.schedule(move || monitor.run()));
         for sensor_id in 0..4 {
             let full_id: u32 = (motor_id as u32).shl(2) + sensor_id as u32;
-            debug!("Full id: {full_id}");
             let sensor = sensor::Sensor::build(
                 Duration::from_millis(motor_monitor_parameters.window_size_ms),
+                Duration::from_millis(motor_monitor_parameters.window_sampling_interval as u64),
                 sender.clone(),
                 SocketAddr::new(
-                    motor_monitor_parameters.sensor_listen_address.ip(),
+                    IpAddr::from_str("0.0.0.0").unwrap(),
                     motor_monitor_parameters.sensor_listen_address.port() + full_id as u16,
                 ),
             );

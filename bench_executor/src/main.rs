@@ -1,5 +1,13 @@
 extern crate core;
 
+use bollard::errors::Error;
+use bollard::models::{Network, Service, ServiceUpdateResponse};
+use bollard::network::InspectNetworkOptions;
+use bollard::service::{InspectServiceOptions, UpdateServiceOptions};
+use bollard::{ClientVersion, Docker};
+use futures::FutureExt;
+use log::{info, warn};
+use serde::Deserialize;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::IpAddr;
@@ -8,15 +16,6 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::time::Duration;
 use std::{fs, thread};
-
-use bollard::errors::Error;
-use bollard::models::{Network, Service, ServiceUpdateResponse};
-use bollard::network::InspectNetworkOptions;
-use bollard::service::{InspectServiceOptions, UpdateServiceOptions};
-use bollard::{ClientVersion, Docker};
-use futures::{FutureExt, StreamExt};
-use log::{debug, info, warn};
-use serde::Deserialize;
 
 use data_transfer_objects::{NetworkConfig, RequestProcessingModel};
 
@@ -102,14 +101,14 @@ async fn main() {
                     // let window_size_ms = sensor_sampling_interval * 5;
                     // for thread_pool_size in &config.thread_pool_sizes {
                     if *sensor_sampling_interval as u64 > *window_size_ms
-                        || *window_sampling_interval as u64 > *window_size_ms
+                        || *window_sampling_interval > *window_size_ms
                     {
                         continue;
                     }
                     scale_service(*no_motor_groups, &docker, &mut network_config).await;
                     for request_processing_model in &config.request_processing_models {
                         let thread_pool_size = match request_processing_model {
-                            RequestProcessingModel::ReactiveStreaming => no_motor_groups * 40,
+                            RequestProcessingModel::ReactiveStreaming => 4 * 40,
                             RequestProcessingModel::ClientServer => no_motor_groups * 4 + 1,
                             RequestProcessingModel::SpringQL => no_motor_groups * 12,
                             RequestProcessingModel::ObjectOriented => no_motor_groups * 5,
@@ -329,12 +328,16 @@ fn execute_test_run(
     {
         Err(())
     } else {
-        Ok((
-            fs::read_to_string("../test_driver/motor_monitor_results.csv")
-                .unwrap_or("".to_string()),
-            fs::read_to_string("../test_driver/alert_delays.csv").unwrap_or("".to_string()),
-            fs::read_to_string("../test_driver/alert_failures.csv").unwrap_or("".to_string()),
-        ))
+        let resource_usage = fs::read_to_string("../test_driver/motor_monitor_results.csv")
+            .unwrap_or("".to_string());
+        let _ = fs::remove_file("../test_driver/motor_monitor_results.csv");
+        let alert_delays =
+            fs::read_to_string("../test_driver/alert_delays.csv").unwrap_or("".to_string());
+        let _ = fs::remove_file("../test_driver/alert_delays.csv");
+        let alert_failures =
+            fs::read_to_string("../test_driver/alert_failures.csv").unwrap_or("".to_string());
+        let _ = fs::remove_file("../test_driver/alert_failures.csv");
+        Ok((resource_usage, alert_delays, alert_failures))
     }
 }
 
@@ -382,27 +385,6 @@ async fn restart_service(
             docker.update_service(service_name, current.spec.unwrap(), options, None)
         });
     execution_chain.await
-}
-
-async fn service_container_restarted(container_name: &str, docker: &Docker) -> bool {
-    let short_container_name = container_name
-        .split('.')
-        .next()
-        .expect("Could not split c name");
-    let containers = docker
-        .list_containers::<String>(None)
-        .await
-        .expect("Could not list containers");
-    containers.iter().any(|container| {
-        container
-            .names
-            .as_ref()
-            .expect("Could not get container names")
-            .iter()
-            .filter(|c_name| **c_name != container_name) //filter out old container
-            .map(|c_name| c_name.split('.').next().expect("Could not split c name"))
-            .any(|c_name| c_name == short_container_name)
-    })
 }
 
 fn persist_alert_delays(file_name_base: &String, alert_delays: String) {

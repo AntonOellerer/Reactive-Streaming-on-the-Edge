@@ -5,7 +5,7 @@ use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
 use data_transfer_objects::Alert;
-use log::info;
+use log::{debug, info};
 use postcard::to_allocvec_cobs;
 
 use crate::sensor::SensorAverage;
@@ -36,10 +36,10 @@ impl MotorMonitor {
             if let Some(air_temperature) = &self.air_temperature && let Some(process_temperature) = &self.process_temperature
                 && let Some(rotational_speed) = &self.rotational_speed && let Some(torque) = &self.torque
             {
-                if let Some(failure) = utils::sensor_data_indicates_failure(air_temperature.average, process_temperature.average, rotational_speed.average, torque.average, utils::get_now_duration() - self.age) {
+                if let Some(failure) = utils::sensor_data_indicates_failure(air_temperature.average, process_temperature.average, rotational_speed.average, torque.average, utils::get_now_duration().checked_sub(self.age).unwrap_or(Duration::from_secs(0))) {
                     info!("Found rule violation {failure} in motor {}", motor_id);
                     let alert = Alert {
-                        time: utils::get_now_secs(),
+                        time: [air_temperature.timestamp, process_temperature.timestamp, rotational_speed.timestamp, torque.timestamp].into_iter().reduce(f64::max).unwrap(),
                         motor_id: motor_id as u16,
                         failure,
                     };
@@ -56,5 +56,6 @@ impl MotorMonitor {
                 }
             }
         }
+        debug!("Exiting monitor");
     }
 }

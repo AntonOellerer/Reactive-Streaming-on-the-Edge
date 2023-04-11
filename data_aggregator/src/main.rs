@@ -23,9 +23,8 @@ type ResultVector = Vec<(i32, f64, f64, f64, f64)>;
 
 fn main() {
     let processing_models = vec![
-        RequestProcessingModel::ClientServer,
+        RequestProcessingModel::ObjectOriented,
         RequestProcessingModel::ReactiveStreaming,
-        RequestProcessingModel::SpringQL,
     ];
     aggregate_processing_time(&processing_models);
     aggregate_memory_usage(&processing_models);
@@ -211,6 +210,7 @@ fn get_relevant_files(
             if let Ok(file_name) = dir_entry.file_name().into_string() {
                 if file_name.contains(&processing_model.to_string())
                     && file_name.contains(file_name_marker)
+                    && file_name.starts_with("1_")
                 {
                     return Some(dir_entry);
                 }

@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::{debug, error, info};
 use postcard::to_allocvec;
 #[cfg(feature = "rpi")]
 use rppal::i2c::I2c;
@@ -42,6 +42,7 @@ fn main() {
         motor_driver_parameters.test_driver_listen_address
     );
     for test_driver_stream in listener.incoming() {
+        info!("Received incoming request");
         match test_driver_stream {
             Ok(mut test_driver_stream) => {
                 thread::spawn(move || {
@@ -59,6 +60,7 @@ fn main() {
             }
         }
     }
+    info!("Quitting");
 }
 
 fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_driver: TcpStream) {
@@ -97,7 +99,7 @@ fn setup_tcp_sensors(
         let sensor_id = index % 4;
         let full_id: u32 = (motor_id as u32).shl(2) + sensor_id as u32;
         let motor_monitor_listen_address =
-            get_motor_monitor_listen_address(motor_monitor_parameters, sensor_id as u16);
+            get_motor_monitor_listen_address(motor_monitor_parameters, full_id as u16);
         let sensor_parameters = create_sensor_parameters(
             full_id,
             motor_monitor_listen_address,

@@ -5,26 +5,20 @@ services:
     ports:
       - target: 8000
         published: 8000
+        protocol: tcp
         mode: host
-      - "9000:9000"
     deploy:
       replicas: 1
-#      placement:
-#        constraints:
-#          - "node.platform.arch==aarch64"
+      placement:
+        constraints:
+          - "node.platform.arch==aarch64"
   cloud_server:
     image: ${REGISTRY_IP}:5000/cloud_server
     ports:
       - target: 8001
         published: 8001
         mode: host
-      - "10000:10000"
     deploy:
       replicas: 1
-#      placement:
-#        constraints:
-#          - "node.role==manager"
   sensor:
     image: ${REGISTRY_IP}:5000/sensor
-    ports:
-      - "11000:11000"

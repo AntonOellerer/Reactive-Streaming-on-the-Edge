@@ -116,8 +116,6 @@ fn execute_reactive_streaming_procedure(
     let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
         + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
     let total_number_of_sensors = total_number_of_motors * 4;
-    //todo find a way to replace this
-    //maybe replace with rule not depending on age
     let motor_ages: Arc<RwLock<Vec<Duration>>> = Arc::new(RwLock::new(
         (0..total_number_of_motors)
             .map(|_| utils::get_now_duration())
