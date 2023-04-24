@@ -6,8 +6,9 @@ use std::time::Duration;
 
 pub struct SensorAverage {
     pub average: f64,
-    pub timestamp: f64,
+    pub number_of_values: usize,
     pub sensor_id: u32,
+    pub timestamp: f64,
 }
 
 struct SlidingWindow {
@@ -94,6 +95,7 @@ impl Sensor {
             self.monitor_connection
                 .send(SensorAverage {
                     average: self.window.get_window_average(),
+                    number_of_values: self.window.elements.len(),
                     timestamp: message.timestamp,
                     sensor_id: message.sensor_id,
                 })

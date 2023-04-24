@@ -114,6 +114,12 @@ async fn main() {
                             RequestProcessingModel::ObjectOriented => no_motor_groups * 5,
                         } as usize;
                         let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_ms}_{window_sampling_interval}_{sensor_sampling_interval}_{thread_pool_size}_{}", request_processing_model.to_string());
+                        let thread_pool_size = match request_processing_model {
+                            RequestProcessingModel::ReactiveStreaming => 10 * 40,
+                            RequestProcessingModel::ClientServer => no_motor_groups * 4 + 1,
+                            RequestProcessingModel::SpringQL => no_motor_groups * 12,
+                            RequestProcessingModel::ObjectOriented => no_motor_groups * 5,
+                        } as usize;
                         let resource_usage_file_name = format!("{file_name_base}_ru.csv");
                         let mut resource_usage_file = OpenOptions::new()
                             .create(true)

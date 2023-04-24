@@ -36,7 +36,8 @@ impl MotorMonitor {
             if let Some(air_temperature) = &self.air_temperature && let Some(process_temperature) = &self.process_temperature
                 && let Some(rotational_speed) = &self.rotational_speed && let Some(torque) = &self.torque
             {
-                if let Some(failure) = utils::sensor_data_indicates_failure(air_temperature.average, process_temperature.average, rotational_speed.average, torque.average, utils::get_now_duration().checked_sub(self.age).unwrap_or(Duration::from_secs(0))) {
+                let avg_number_of_values = (air_temperature.number_of_values + process_temperature.number_of_values + rotational_speed.number_of_values + torque.number_of_values) /4;
+                if let Some(failure) = utils::averages_indicate_failure(air_temperature.average, process_temperature.average, rotational_speed.average, torque.average, avg_number_of_values) {
                     info!("Found rule violation {failure} in motor {}", motor_id);
                     let alert = Alert {
                         time: [air_temperature.timestamp, process_temperature.timestamp, rotational_speed.timestamp, torque.timestamp].into_iter().reduce(f64::max).unwrap(),

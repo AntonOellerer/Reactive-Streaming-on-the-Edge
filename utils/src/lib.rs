@@ -27,10 +27,19 @@ use procfs::process::Process;
 use serde::Deserialize;
 
 use data_transfer_objects::MotorFailure;
+use data_transfer_objects::MotorFailure::{HeatDissipationFailure, PowerFailure};
 #[cfg(feature = "std")]
 use data_transfer_objects::{BenchmarkData, BenchmarkDataType};
 #[cfg(feature = "std")]
 use data_transfer_objects::{MotorMonitorParameters, RequestProcessingModel};
+
+//https://en.wikipedia.org/wiki/Algebra_of_random_variables
+
+const CRITICAL_VALUE: f64 = 1.64;
+const TEMP_DIFF_MEAN: f64 = 10.00063;
+const TEMP_DIFF_SD: f64 = 2.49035776174829;
+const POWER_MEAN: f64 = 6443.50092908344;
+const POWER_SD: f64 = 1782.92606670628;
 
 #[cfg(feature = "std")]
 //todo find way to return error object
@@ -53,7 +62,7 @@ where
             trace!("Reading into accumulator");
             window = match cobs_buf.feed::<T>(window) {
                 FeedResult::Consumed => {
-                    debug!("Consumed buffer");
+                    trace!("Consumed buffer");
                     break;
                 }
                 FeedResult::OverFull(new_wind) => {
@@ -65,7 +74,7 @@ where
                     new_wind
                 }
                 FeedResult::Success { data, remaining } => {
-                    debug!("Deserialized object");
+                    trace!("Deserialized object");
                     return_object = Some(data);
                     if !remaining.is_empty() {
                         warn!("Remaining size: {}", remaining.len());
@@ -231,6 +240,47 @@ pub fn sensor_data_indicates_failure(
         torque * rotational_speed_in_rad,
         age.as_secs_f64() * torque,
     )
+}
+
+/**
+1. air temperature [K] generated using a random walk process later normalized to a standard deviation of 2 K around 300 K
+2. process temperature [K] generated using a random walk process normalized to a standard deviation of 1 K, added to the air temperature plus 10 K
+3. rotational speed [rpm] calculated from a power of 2860 W, overlaid with a normally distributed noise
+4. torque [Nm] torque values are normally distributed around 40 Nm with a σ = 10 Nm and no negative values.
+ **/
+#[cfg(feature = "std")]
+pub fn averages_indicate_failure(
+    air_temperature: f64,
+    process_temperature: f64,
+    rotational_speed: f64,
+    torque: f64,
+    window_size: usize,
+) -> Option<MotorFailure> {
+    let rotational_speed_in_rad = rpm_to_rad(rotational_speed);
+    let sqrt_sample_size = f64::sqrt(window_size as f64);
+    debug!(
+        "TEMP_DIFF_MEAN: {:5.2}, TEMP_CI: {:5.2}, actual_diff: {:5.2}",
+        TEMP_DIFF_MEAN,
+        CRITICAL_VALUE * TEMP_DIFF_SD / sqrt_sample_size,
+        process_temperature - air_temperature
+    );
+    debug!(
+        "POWER_MEAN: {:5.2}, POWER_CI: {:5.2}, actual_power: {:5.2}",
+        POWER_MEAN,
+        CRITICAL_VALUE * POWER_SD / sqrt_sample_size,
+        torque * rotational_speed_in_rad
+    );
+    if ((air_temperature - process_temperature).abs() - TEMP_DIFF_MEAN).abs()
+        > CRITICAL_VALUE * TEMP_DIFF_SD / sqrt_sample_size
+    {
+        Some(HeatDissipationFailure)
+    } else if ((torque * rotational_speed_in_rad) - POWER_MEAN).abs()
+        > CRITICAL_VALUE * POWER_SD / sqrt_sample_size
+    {
+        Some(PowerFailure)
+    } else {
+        None
+    }
 }
 
 #[cfg(feature = "std")]

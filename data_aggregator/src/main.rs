@@ -210,7 +210,7 @@ fn get_relevant_files(
             if let Ok(file_name) = dir_entry.file_name().into_string() {
                 if file_name.contains(&processing_model.to_string())
                     && file_name.contains(file_name_marker)
-                    && file_name.starts_with("1_")
+                    && file_name.starts_with("16_")
                 {
                     return Some(dir_entry);
                 }

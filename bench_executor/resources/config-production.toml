@@ -1,8 +1,8 @@
 repetitions = 10
 motor_groups_tcp = [1, 4, 8, 16]
 durations = [60]
-window_size_ms = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000]
+window_size_ms = [1, 10, 100, 1000, 10000]
 window_sampling_interval_ms = [1000]
-sensor_sampling_interval_ms = [3]
+sensor_sampling_interval_ms = [1]
 thread_pool_sizes = [40]
 request_processing_models= ["ObjectOriented", "ReactiveStreaming"]

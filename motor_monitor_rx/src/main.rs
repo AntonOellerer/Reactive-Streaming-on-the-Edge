@@ -22,6 +22,7 @@ use std::time::Duration;
 #[derive(Debug, Copy, Clone)]
 struct SensorAverage {
     reading: f64,
+    number_of_values: usize,
     sensor_id: u32,
     timestamp: f64,
 }
@@ -116,11 +117,6 @@ fn execute_reactive_streaming_procedure(
     let total_number_of_motors = motor_monitor_parameters.number_of_tcp_motor_groups
         + motor_monitor_parameters.number_of_i2c_motor_groups as usize;
     let total_number_of_sensors = total_number_of_motors * 4;
-    let motor_ages: Arc<RwLock<Vec<Duration>>> = Arc::new(RwLock::new(
-        (0..total_number_of_motors)
-            .map(|_| utils::get_now_duration())
-            .collect(),
-    ));
     let listen_pool = ThreadPoolBuilder::new().pool_size(1).create().unwrap();
     let read_message_pool = ThreadPoolBuilder::new()
         .pool_size(motor_monitor_parameters.number_of_tcp_motor_groups * 4 * 2)
@@ -168,7 +164,6 @@ fn execute_reactive_streaming_procedure(
         },
     )
     .flat_map(move |timed_sensor_messages| {
-        let arc_clone = Arc::clone(&motor_ages);
         // eprintln!("Messages: {timed_sensor_messages:?}");
         from_iter(timed_sensor_messages)
             .group_by(|message: &SensorMessage| message.sensor_id)
@@ -189,13 +184,13 @@ fn execute_reactive_streaming_procedure(
                     .map(move |(i, sum_reading, max_time)| SensorAverage {
                         sensor_id,
                         reading: sum_reading / i,
+                        number_of_values: i as usize,
                         timestamp: max_time,
                     })
             })
             .group_by(|sensor_message| get_motor_id(sensor_message.sensor_id))
             .flat_map(move |motor_group| {
                 let motor_id = motor_group.key;
-                let arc_clone = Arc::clone(&arc_clone);
                 motor_group
                     .reduce(
                         MotorData::default(),
@@ -206,14 +201,8 @@ fn execute_reactive_streaming_procedure(
                         },
                     )
                     .map(move |motor_data| {
-                        let vec = arc_clone.read().unwrap();
-                        let motor_age = vec[motor_id as usize];
-                        drop(vec);
-                        violated_rule(&motor_data, motor_age).map(|violated_rule| {
+                        violated_rule(&motor_data).map(|violated_rule| {
                             let now = utils::get_now_duration();
-                            let mut vec = arc_clone.write().unwrap();
-                            vec[motor_id as usize] = now;
-                            drop(vec);
                             Alert {
                                 time: motor_data.get_time(),
                                 motor_id: motor_id as u16,
@@ -239,38 +228,31 @@ fn execute_reactive_streaming_procedure(
     )
 }
 
-fn violated_rule(sensor_average_readings: &MotorData, motor_age: Duration) -> Option<MotorFailure> {
+fn violated_rule(sensor_average_readings: &MotorData) -> Option<MotorFailure> {
     if !sensor_average_readings.contains_all_data() {
         trace!("{sensor_average_readings:?}");
         return None;
     }
-    let air_temperature = sensor_average_readings
-        .air_temperature_data
-        .unwrap()
-        .reading;
-    let process_temperature = sensor_average_readings
-        .process_temperature_data
-        .unwrap()
-        .reading;
-    let rotational_speed = sensor_average_readings
-        .rotational_speed_data
-        .unwrap()
-        .reading;
-    let torque = sensor_average_readings.torque_data.unwrap().reading;
-    let age = utils::get_now_duration() - motor_age;
+    let air_temperature = sensor_average_readings.air_temperature_data.unwrap();
+    let process_temperature = sensor_average_readings.process_temperature_data.unwrap();
+    let rotational_speed = sensor_average_readings.rotational_speed_data.unwrap();
+    let torque = sensor_average_readings.torque_data.unwrap();
     debug!(
-        "temp: {:5.2}, rs: {:5.2}, torque: {:5.2}, wear: {:5.2}",
-        (air_temperature - process_temperature).abs(),
-        rotational_speed,
-        torque,
-        age.as_secs_f64() * torque.round()
+        "temp: {:5.2}, rs: {:5.2}, torque: {:5.2}",
+        (air_temperature.reading - process_temperature.reading).abs(),
+        rotational_speed.reading,
+        torque.reading,
     );
-    utils::sensor_data_indicates_failure(
-        air_temperature,
-        process_temperature,
-        rotational_speed,
-        torque,
-        age,
+    utils::averages_indicate_failure(
+        air_temperature.reading,
+        process_temperature.reading,
+        rotational_speed.reading,
+        torque.reading,
+        (air_temperature.number_of_values
+            + process_temperature.number_of_values
+            + rotational_speed.number_of_values
+            + torque.number_of_values)
+            / 4,
     )
 }
 

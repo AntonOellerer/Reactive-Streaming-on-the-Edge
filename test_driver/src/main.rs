@@ -24,7 +24,7 @@ const NETWORK_CONFIG_PATH: &str = "../network_config.toml";
 #[cfg(debug_assertions)]
 const MONITOR_IP: &str = "127.0.0.1";
 #[cfg(not(debug_assertions))]
-const MONITOR_IP: &str = "10.0.0.3";
+const MONITOR_IP: &str = "192.168.178.51";
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
