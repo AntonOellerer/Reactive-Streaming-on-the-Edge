@@ -16,7 +16,6 @@ use std::f64;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::ops::{BitAnd, Index, IndexMut, Shr};
-use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 #[derive(Debug, Copy, Clone)]
@@ -201,13 +200,10 @@ fn execute_reactive_streaming_procedure(
                         },
                     )
                     .map(move |motor_data| {
-                        violated_rule(&motor_data).map(|violated_rule| {
-                            let now = utils::get_now_duration();
-                            Alert {
-                                time: motor_data.get_time(),
-                                motor_id: motor_id as u16,
-                                failure: violated_rule,
-                            }
+                        violated_rule(&motor_data).map(|violated_rule| Alert {
+                            time: motor_data.get_time(),
+                            motor_id: motor_id as u16,
+                            failure: violated_rule,
                         })
                     })
             })

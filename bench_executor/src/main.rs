@@ -27,8 +27,6 @@ struct Config {
     request_processing_models: Vec<RequestProcessingModel>,
     window_size_ms: Vec<u64>,
     sensor_sampling_interval_ms: Vec<u32>,
-    window_sampling_interval_ms: Vec<u32>,
-    thread_pool_sizes: Vec<usize>,
 }
 
 trait RAIIConfig {
@@ -108,18 +106,12 @@ async fn main() {
                     scale_service(*no_motor_groups, &docker, &mut network_config).await;
                     for request_processing_model in &config.request_processing_models {
                         let thread_pool_size = match request_processing_model {
-                            RequestProcessingModel::ReactiveStreaming => 4 * 40,
-                            RequestProcessingModel::ClientServer => no_motor_groups * 4 + 1,
-                            RequestProcessingModel::SpringQL => no_motor_groups * 12,
-                            RequestProcessingModel::ObjectOriented => no_motor_groups * 5,
-                        } as usize;
-                        let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_ms}_{window_sampling_interval}_{sensor_sampling_interval}_{thread_pool_size}_{}", request_processing_model.to_string());
-                        let thread_pool_size = match request_processing_model {
                             RequestProcessingModel::ReactiveStreaming => 10 * 40,
                             RequestProcessingModel::ClientServer => no_motor_groups * 4 + 1,
                             RequestProcessingModel::SpringQL => no_motor_groups * 12,
                             RequestProcessingModel::ObjectOriented => no_motor_groups * 5,
                         } as usize;
+                        let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_ms}_{window_sampling_interval}_{sensor_sampling_interval}_{thread_pool_size}_{}", request_processing_model.to_string());
                         let resource_usage_file_name = format!("{file_name_base}_ru.csv");
                         let mut resource_usage_file = OpenOptions::new()
                             .create(true)

@@ -1,13 +1,10 @@
-use log::{debug, error, info};
+use log::{error, info};
 use postcard::to_allocvec;
-#[cfg(feature = "rpi")]
-use rppal::i2c::I2c;
 use serde::Deserialize;
 use std::io::Write;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::ops::Shl;
 use std::process::{Command, Stdio};
-use std::str::FromStr;
 use std::{fs, thread};
 use threadpool::ThreadPool;
 
@@ -72,8 +69,6 @@ fn execute_new_run(motor_driver_parameters: MotorDriverRunParameters, test_drive
         &motor_monitor_parameters,
         &pool,
     );
-    #[cfg(feature = "rpi")]
-    setup_i2c_sensors(&motor_driver_parameters);
     info!("Setup sensors");
     handle_motor_monitor(
         motor_driver_parameters.request_processing_model,
@@ -126,31 +121,6 @@ fn get_motor_monitor_listen_address(
             motor_monitor_parameters.sensor_listen_address.ip(),
             motor_monitor_parameters.sensor_listen_address.port() + index,
         ),
-    }
-}
-
-#[cfg(feature = "rpi")]
-fn setup_i2c_sensors(motor_driver_parameters: &MotorDriverRunParameters) {
-    let mut message_buffer = [0u8; 32];
-    let mut i2c = I2c::new().expect("Could not instantiate i2c object");
-    for motor_id in 0..motor_driver_parameters.number_of_i2c_motor_groups {
-        for sensor_no in 0..4u8 {
-            let sensor_id: u8 = (motor_id).shl(2) + sensor_no;
-            let parameters = SensorParameters {
-                id: sensor_id as u32,
-                duration: motor_driver_parameters.duration,
-                sampling_interval: motor_driver_parameters.sensor_sampling_interval,
-                request_processing_model: motor_driver_parameters.request_processing_model,
-                motor_monitor_listen_address: SocketAddr::from_str("127.0.0.1:8080").unwrap(), //todo will probably have to deal w/ this separately
-                start_time: motor_driver_parameters.start_time,
-            };
-            let message = postcard::to_slice_cobs(&parameters, &mut message_buffer)
-                .expect("Could not write i2c sensor parameters to slice");
-            i2c.set_slave_address(sensor_id as u16)
-                .unwrap_or_else(|_| panic!("Could not set slave address to {sensor_id}"));
-            i2c.write(message)
-                .expect("Could not write sensor parameters to i2c");
-        }
     }
 }
 

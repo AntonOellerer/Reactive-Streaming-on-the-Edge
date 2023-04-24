@@ -1,9 +1,3 @@
-use std::fs;
-use std::fs::{read_dir, DirEntry};
-use std::ops::Range;
-use std::str::FromStr;
-use std::sync::Arc;
-
 use plotters::prelude::{
     ChartBuilder, ErrorBar, IntoDrawingArea, IntoLogRange, PathElement, SVGBackend, BLACK, BLUE,
     GREEN, RED, WHITE,
@@ -13,11 +7,16 @@ use polars::frame::DataFrame;
 use polars::prelude::SerReader;
 use polars::prelude::{ChunkVar, Series};
 use polars::prelude::{CsvReader, Schema};
+use std::fs;
+use std::fs::{read_dir, DirEntry};
+use std::ops::Range;
+use std::str::FromStr;
+use std::sync::Arc;
 
 use data_transfer_objects::RequestProcessingModel;
 
 const RAW_DATA_PATH: &str = "../bench_executor/";
-const X_LABEL: &'static str = "Window Size";
+const X_LABEL: &str = "Window Size";
 
 type ResultVector = Vec<(i32, f64, f64, f64, f64)>;
 
@@ -258,7 +257,7 @@ fn plot_aggregate_data(
                     single_run.2 - single_run.4,
                     single_run.2,
                     single_run.2 + single_run.4,
-                    style.clone(),
+                    style,
                     10,
                 )
             }))
@@ -268,7 +267,7 @@ fn plot_aggregate_data(
     }
     chart
         .configure_series_labels()
-        .border_style(&BLACK)
+        .border_style(BLACK)
         .draw()
         .unwrap();
 }

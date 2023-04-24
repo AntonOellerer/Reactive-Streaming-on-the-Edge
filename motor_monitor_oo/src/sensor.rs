@@ -1,5 +1,5 @@
 use data_transfer_objects::SensorMessage;
-use log::{debug, info};
+use log::debug;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::mpsc::Sender;
 use std::time::Duration;

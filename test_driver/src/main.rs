@@ -2,7 +2,7 @@ use clap::builder::TypedValueParser;
 use clap::Parser;
 use data_transfer_objects::{
     Alert, AlertWithDelay, BenchmarkData, CloudServerRunParameters, MotorDriverRunParameters,
-    NetworkConfig, RequestProcessingModel,
+    RequestProcessingModel,
 };
 use log::{debug, info};
 use postcard::to_allocvec_cobs;
@@ -14,8 +14,6 @@ use std::str;
 use std::str::FromStr;
 use std::time::Duration;
 use std::{fs, thread};
-
-// mod validator;
 
 #[cfg(debug_assertions)]
 const CONFIG_PATH: &str = "resources/config-debug.toml";

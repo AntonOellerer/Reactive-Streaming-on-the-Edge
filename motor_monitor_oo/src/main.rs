@@ -1,18 +1,16 @@
 #![feature(let_chains)]
 
-use std::net::{IpAddr, SocketAddr, TcpStream};
-use std::ops::{BitAnd, Shl, Shr};
-use std::str::FromStr;
-use std::sync::mpsc;
-use std::time::Duration;
-
+use data_transfer_objects::{BenchmarkDataType, MotorMonitorParameters};
 use env_logger::Target;
 use futures::executor::{ThreadPool, ThreadPoolBuilder};
 use futures::future::RemoteHandle;
-use log::{debug, info};
-
-use data_transfer_objects::{Alert, BenchmarkDataType, MotorFailure, MotorMonitorParameters};
+use log::info;
 use scheduler::Scheduler;
+use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::ops::Shl;
+use std::str::FromStr;
+use std::sync::mpsc;
+use std::time::Duration;
 
 mod monitor;
 mod sensor;
