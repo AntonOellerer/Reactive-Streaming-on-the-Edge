@@ -1,3 +1,5 @@
+mod validator;
+
 use clap::builder::TypedValueParser;
 use clap::Parser;
 use data_transfer_objects::{

@@ -1,5 +1,5 @@
 use crate::Args;
-use data_transfer_objects::{Alert, MotorFailure};
+use data_transfer_objects::Alert;
 use log::{debug, error, info, trace};
 use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
@@ -50,7 +50,7 @@ pub(crate) fn get_expected_alerts(args: &Args, start_time: Duration) -> Vec<Aler
                 time += Duration::from_millis(args.sensor_sampling_interval_ms as u64);
             }
         }
-        alerts.append(&mut get_motor_alerts(i, buffer, window_size, start_time));
+        alerts.append(&mut get_motor_alerts(i, buffer, window_size));
     }
     alerts.sort_by_key(|alert| alert.time.round() as u64);
     alerts
@@ -60,41 +60,26 @@ fn get_motor_alerts(
     motor_id: u16,
     buffer: [Vec<(Duration, f32)>; 4],
     window_size: u64,
-    start_time: Duration,
 ) -> Vec<Alert> {
     let mut alerts = Vec::new();
-    let mut sensor_replacing_time = start_time;
     for i in 0..buffer[0].len() {
         let air_temperature = get_average_value(i, window_size, &buffer[0]);
         let process_temperature = get_average_value(i, window_size, &buffer[1]);
         let rotational_speed = get_average_value(i, window_size, &buffer[2]);
         let torque = get_average_value(i, window_size, &buffer[3]);
-        let rotational_speed_in_rad = utils::rpm_to_rad(rotational_speed);
         let time = buffer[0][i].0;
-        let age = time - sensor_replacing_time;
-        if (air_temperature - process_temperature).abs() < 8.6 && rotational_speed < 1380.0 {
+        if let Some(motor_failure) = utils::averages_indicate_failure(
+            air_temperature,
+            process_temperature,
+            rotational_speed,
+            torque,
+            window_size as usize,
+        ) {
             alerts.push(Alert {
                 time: time.as_secs_f64(),
                 motor_id,
-                failure: MotorFailure::HeatDissipationFailure,
-            });
-            sensor_replacing_time = time;
-        } else if torque * rotational_speed_in_rad > 9000.0
-            || torque * rotational_speed_in_rad < 3500.0
-        {
-            alerts.push(Alert {
-                time: time.as_secs_f64(),
-                motor_id,
-                failure: MotorFailure::PowerFailure,
-            });
-            sensor_replacing_time = time;
-        } else if age.as_secs_f64() * torque.round() > 10000_f64 {
-            alerts.push(Alert {
-                time: time.as_secs_f64(),
-                motor_id,
-                failure: MotorFailure::OverstrainFailure,
-            });
-            sensor_replacing_time = time;
+                failure: motor_failure,
+            })
         }
     }
     alerts
