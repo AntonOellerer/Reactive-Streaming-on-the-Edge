@@ -1,5 +1,3 @@
-#![feature(drain_filter)]
-
 use data_transfer_objects::{
     Alert, BenchmarkDataType, MotorFailure, MotorMonitorParameters, SensorMessage,
 };
@@ -125,9 +123,9 @@ fn execute_reactive_streaming_procedure(
     create(move |subscriber| {
         let listen_address = format!("0.0.0.0:{}", sensor_listen_address.port());
         info!("Listening on {}", listen_address);
-        match TcpListener::bind(listen_address) {
+        match TcpListener::bind(listen_address.clone()) {
             Ok(listener) => {
-                info!("Bound listener on sensor listener address {sensor_listen_address}");
+                info!("Bound listener on sensor listener address {listen_address}");
                 for _ in 0..total_number_of_sensors {
                     match listener.accept() {
                         Ok((stream, _)) => {

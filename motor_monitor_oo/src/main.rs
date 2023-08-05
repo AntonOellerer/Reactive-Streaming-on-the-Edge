@@ -1,16 +1,18 @@
 #![feature(let_chains)]
 
-use data_transfer_objects::{BenchmarkDataType, MotorMonitorParameters};
-use env_logger::Target;
-use futures::executor::{ThreadPool, ThreadPoolBuilder};
-use futures::future::RemoteHandle;
-use log::info;
-use scheduler::Scheduler;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::ops::Shl;
 use std::str::FromStr;
 use std::sync::mpsc;
 use std::time::Duration;
+
+use env_logger::Target;
+use futures::executor::{ThreadPool, ThreadPoolBuilder};
+use futures::future::RemoteHandle;
+use log::info;
+
+use data_transfer_objects::{BenchmarkDataType, MotorMonitorParameters};
+use scheduler::Scheduler;
 
 mod monitor;
 mod sensor;
@@ -49,16 +51,7 @@ fn setup_threads(
     let mut handles = vec![];
     for motor_id in 0..motor_monitor_parameters.number_of_tcp_motor_groups {
         let (sender, receiver) = mpsc::channel();
-        let monitor = monitor::MotorMonitor {
-            // motor_id: 0,
-            sensor_data_receiver: receiver,
-            cloud_server: cloud_server.try_clone().unwrap(),
-            air_temperature: None,
-            process_temperature: None,
-            rotational_speed: None,
-            torque: None,
-            age: utils::get_now_duration(),
-        };
+        let monitor = monitor::MotorMonitor::build(receiver, cloud_server.try_clone().unwrap());
         handles.push(thread_pool.schedule(move || monitor.run()));
         for sensor_id in 0..4 {
             let full_id: u32 = (motor_id as u32).shl(2) + sensor_id as u32;

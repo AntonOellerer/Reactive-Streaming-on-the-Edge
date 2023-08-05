@@ -1,4 +1,10 @@
-FROM rustlang/rust:nightly as builder
+FROM fedora:latest as rust_fedora_builder
+
+RUN dnf install -y gcc
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+FROM rust_fedora_builder as builder
 
 WORKDIR /usr/src/data_transfer_objects
 COPY data_transfer_objects .
@@ -14,11 +20,11 @@ WORKDIR /usr/src/sensor
 COPY ./sensor .
 RUN cargo install --path .
 
-FROM debian:buster-slim
+FROM fedora:latest
 
 COPY sensor/resources/. /etc/.
-COPY --from=builder /usr/local/cargo/bin/sensor_driver /usr/local/bin/sensor_driver
-COPY --from=builder /usr/local/cargo/bin/sensor /usr/local/bin/sensor
+COPY --from=builder /root/.cargo/bin/sensor_driver /usr/local/bin/sensor_driver
+COPY --from=builder /root/.cargo/bin/sensor /usr/local/bin/sensor
 
 ENV RUST_LOG=info
 CMD ["sensor_driver", "0.0.0.0:11000"]

@@ -4,9 +4,10 @@ use std::ops::{BitAnd, Shr};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use data_transfer_objects::Alert;
 use log::{debug, info};
 use postcard::to_allocvec_cobs;
+
+use data_transfer_objects::Alert;
 
 use crate::sensor::SensorAverage;
 
@@ -18,10 +19,23 @@ pub struct MotorMonitor {
     pub process_temperature: Option<SensorAverage>,
     pub rotational_speed: Option<SensorAverage>,
     pub torque: Option<SensorAverage>,
-    pub age: Duration,
 }
 
 impl MotorMonitor {
+    pub fn build(
+        sensor_data_receiver: Receiver<SensorAverage>,
+        cloud_server: TcpStream,
+    ) -> MotorMonitor {
+        MotorMonitor {
+            sensor_data_receiver,
+            cloud_server,
+            air_temperature: None,
+            process_temperature: None,
+            rotational_speed: None,
+            torque: None,
+        }
+    }
+
     pub fn run(mut self) {
         while let Ok(sensor_average) = self.sensor_data_receiver.recv() {
             let motor_id = sensor_average.sensor_id.shr(2);
@@ -53,7 +67,6 @@ impl MotorMonitor {
                     self.air_temperature = None;
                     self.rotational_speed = None;
                     self.torque = None;
-                    self.age = utils::get_now_duration();
                 }
             }
         }

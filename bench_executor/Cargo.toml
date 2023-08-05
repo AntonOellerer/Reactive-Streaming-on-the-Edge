@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 toml = "0.7.0"
 env_logger = "0.10.0"
-log = "0.4.17"
+log = "0.4.19"
 data_transfer_objects = { path = "../data_transfer_objects" }
 utils = { path = "../utils" }
 serde = { version = "1.0.152", features = ["derive"] }

@@ -84,7 +84,7 @@ async fn main() {
         120,
         &ClientVersion {
             major_version: 1,
-            minor_version: 41,
+            minor_version: 43,
         },
     )
     .unwrap();
@@ -125,7 +125,7 @@ async fn main() {
                         if lines == 0 {
                             writeln!(
                                 resource_usage_file,
-                                "id,utime,stime,cutime,cstime,vmhwm,vmpeak"
+                                "id,utime,stime,cutime,cstime,vmhwm,vmpeak,load_average"
                             )
                             .unwrap();
                             lines += 1;

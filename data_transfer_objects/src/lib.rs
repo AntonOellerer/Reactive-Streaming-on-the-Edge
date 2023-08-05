@@ -101,6 +101,7 @@ pub struct BenchmarkData {
     pub children_time_spent_in_kernel_mode: u64,
     pub peak_resident_set_size: u64,
     pub peak_virtual_memory_size: u64,
+    pub load_average: f32,
     pub benchmark_data_type: BenchmarkDataType,
 }
 
@@ -114,14 +115,15 @@ pub enum BenchmarkDataType {
 impl BenchmarkData {
     pub fn to_csv_string(&self) -> String {
         format!(
-            "{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{}\n",
             self.id,
             self.time_spent_in_user_mode,
             self.time_spent_in_kernel_mode,
             self.children_time_spent_in_user_mode,
             self.children_time_spent_in_kernel_mode,
             self.peak_resident_set_size,
-            self.peak_virtual_memory_size
+            self.peak_virtual_memory_size,
+            self.load_average
         )
     }
 }

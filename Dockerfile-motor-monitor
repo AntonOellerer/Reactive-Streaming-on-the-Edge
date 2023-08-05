@@ -1,4 +1,10 @@
-FROM --platform=$TARGETPLATFORM rustlang/rust:nightly as driver_builder
+FROM --platform=$TARGETPLATFORM fedora:latest as rust_fedora_builder
+
+RUN dnf install -y gcc
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y --default-toolchain nightly --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+FROM --platform=$TARGETPLATFORM rust_fedora_builder as driver_builder
 
 COPY data_transfer_objects /usr/src/data_transfer_objects
 COPY utils /usr/src/utils
@@ -16,7 +22,7 @@ RUN cargo install --path .
 #COPY ./motor_monitor_cs .
 #RUN cargo install --path .
 
-FROM --platform=$TARGETPLATFORM rustlang/rust:nightly as monitor_rx_builder
+FROM --platform=$TARGETPLATFORM rust_fedora_builder as monitor_rx_builder
 
 COPY data_transfer_objects /usr/src/data_transfer_objects
 COPY utils /usr/src/utils
@@ -34,7 +40,7 @@ RUN cargo install --path .
 #COPY ./motor_monitor_sql .
 #RUN cargo install --path .
 
-FROM --platform=$TARGETPLATFORM rustlang/rust:nightly as monitor_oo_builder
+FROM --platform=$TARGETPLATFORM rust_fedora_builder as monitor_oo_builder
 
 COPY data_transfer_objects /usr/src/data_transfer_objects
 COPY utils /usr/src/utils
@@ -43,14 +49,14 @@ WORKDIR /usr/src/motor_monitor_oo
 COPY ./motor_monitor_oo .
 RUN cargo install --path .
 
-FROM --platform=$TARGETPLATFORM debian:buster-slim
+FROM --platform=$TARGETPLATFORM fedora:latest
 
 COPY motor_driver/resources/config-production.toml /etc/config-production.toml
-COPY --from=driver_builder /usr/local/cargo/bin/motor_driver /usr/local/bin/motor_driver
+COPY --from=driver_builder /root/.cargo/bin/motor_driver /usr/local/bin/motor_driver
 #COPY --from=monitor_cs_builder /usr/local/cargo/bin/motor_monitor_cs /usr/local/bin/motor_monitor_cs
-COPY --from=monitor_rx_builder /usr/local/cargo/bin/motor_monitor_rx /usr/local/bin/motor_monitor_rx
+COPY --from=monitor_rx_builder /root/.cargo/bin/motor_monitor_rx /usr/local/bin/motor_monitor_rx
 #COPY --from=monitor_sql_builder /usr/local/cargo/bin/motor_monitor_sql /usr/local/bin/motor_monitor_sql
-COPY --from=monitor_oo_builder /usr/local/cargo/bin/motor_monitor_oo /usr/local/bin/motor_monitor_oo
+COPY --from=monitor_oo_builder /root/.cargo/bin/motor_monitor_oo /usr/local/bin/motor_monitor_oo
 
 ENV RUST_LOG="info"
 CMD ["motor_driver"]

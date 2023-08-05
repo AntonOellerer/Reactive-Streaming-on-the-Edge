@@ -11,6 +11,6 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 postcard = { version = "1.0.2", features = ["alloc"] }
 serde = { version = "1.0", default-features = false }
 env_logger = "0.10.0"
-log = "0.4.17"
+log = "0.4.19"
 utils = { path = "../utils" }
 chrono = "0.4.24"

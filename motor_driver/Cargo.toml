@@ -13,4 +13,4 @@ threadpool = "1.8.1"
 toml = "0.7.1"
 utils = { path = "../utils" }
 env_logger = "0.10.0"
-log = "0.4.17"
+log = "0.4.19"

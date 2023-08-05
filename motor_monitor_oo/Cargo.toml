@@ -10,6 +10,6 @@ data_transfer_objects = { path = "../data_transfer_objects" }
 utils = { path = "../utils" }
 postcard = { version = "1.0.2", features = ["alloc"] }
 env_logger = "0.10.0"
-log = "0.4.17"
+log = "0.4.19"
 scheduler = { path = "../scheduler"}
 futures = { version = "0.3.25", features = ["thread-pool"]}

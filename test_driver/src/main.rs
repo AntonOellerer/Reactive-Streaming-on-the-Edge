@@ -1,14 +1,3 @@
-mod validator;
-
-use clap::builder::TypedValueParser;
-use clap::Parser;
-use data_transfer_objects::{
-    Alert, AlertWithDelay, BenchmarkData, CloudServerRunParameters, MotorDriverRunParameters,
-    RequestProcessingModel,
-};
-use log::{debug, info};
-use postcard::to_allocvec_cobs;
-use serde::Deserialize;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -16,6 +5,19 @@ use std::str;
 use std::str::FromStr;
 use std::time::Duration;
 use std::{fs, thread};
+
+use clap::builder::TypedValueParser;
+use clap::Parser;
+use log::{debug, info};
+use postcard::to_allocvec_cobs;
+use serde::Deserialize;
+
+use data_transfer_objects::{
+    Alert, AlertWithDelay, BenchmarkData, CloudServerRunParameters, MotorDriverRunParameters,
+    NetworkConfig, RequestProcessingModel,
+};
+
+mod validator;
 
 #[cfg(debug_assertions)]
 const CONFIG_PATH: &str = "resources/config-debug.toml";

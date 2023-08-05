@@ -1,7 +1,7 @@
 repetitions = 10
-motor_groups_tcp = [1, 4, 8, 16]
+motor_groups_tcp = [12]
 durations = [60]
-window_size_ms = [1, 10, 100, 1000, 10000]
+window_size_ms = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 window_sampling_interval_ms = [1000]
 sensor_sampling_interval_ms = [1]
 thread_pool_sizes = [40]

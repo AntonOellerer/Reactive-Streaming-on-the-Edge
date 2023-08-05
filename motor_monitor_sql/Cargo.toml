@@ -10,7 +10,7 @@ data_transfer_objects = { path = "../data_transfer_objects" }
 utils = { path = "../utils" }
 postcard = { version = "1.0.2", features = ["alloc"] }
 env_logger = "0.10.0"
-log = "0.4.17"
+log = "0.4.19"
 springql = {git = "https://github.com/AntonOellerer/SpringQL.git", branch = "fix/listen_all_tcp_interfaces"}
 scheduler = { path = "../scheduler"}
 chrono = "0.4.24"

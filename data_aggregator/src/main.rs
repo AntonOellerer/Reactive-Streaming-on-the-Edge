@@ -1,3 +1,9 @@
+use std::fs;
+use std::fs::{read_dir, DirEntry};
+use std::ops::Range;
+use std::str::FromStr;
+use std::sync::Arc;
+
 use plotters::prelude::{
     ChartBuilder, ErrorBar, IntoDrawingArea, IntoLogRange, PathElement, SVGBackend, BLACK, BLUE,
     GREEN, RED, WHITE,
@@ -7,11 +13,6 @@ use polars::frame::DataFrame;
 use polars::prelude::SerReader;
 use polars::prelude::{ChunkVar, Series};
 use polars::prelude::{CsvReader, Schema};
-use std::fs;
-use std::fs::{read_dir, DirEntry};
-use std::ops::Range;
-use std::str::FromStr;
-use std::sync::Arc;
 
 use data_transfer_objects::RequestProcessingModel;
 
@@ -21,21 +22,28 @@ const X_LABEL: &str = "Window Size";
 type ResultVector = Vec<(i32, f64, f64, f64, f64)>;
 
 fn main() {
+    let independent_var = std::env::args()
+        .nth(1)
+        .expect("Did not receive dependant variable");
     let processing_models = vec![
         RequestProcessingModel::ObjectOriented,
         RequestProcessingModel::ReactiveStreaming,
     ];
-    aggregate_processing_time(&processing_models);
-    aggregate_memory_usage(&processing_models);
-    aggregate_alert_delays(&processing_models);
-    aggregate_alert_failures(&processing_models);
+    aggregate_processing_time(&independent_var, &processing_models);
+    aggregate_memory_usage(&independent_var, &processing_models);
+    aggregate_alert_delays(&independent_var, &processing_models);
+    aggregate_alert_failures(&independent_var, &processing_models);
+    aggregate_load_average(&independent_var, &processing_models);
 }
 
-fn aggregate_processing_time(processing_models: &Vec<RequestProcessingModel>) {
+fn aggregate_processing_time(
+    independent_var: &str,
+    processing_models: &Vec<RequestProcessingModel>,
+) {
     let mut results = vec![];
     for processing_model in processing_models {
         let mut aggregates: ResultVector = vec![];
-        let data_frames = get_data_frames(processing_model, "ru");
+        let data_frames = get_data_frames(processing_model, independent_var, "ru");
         for (file_name, data_frame) in data_frames {
             let independent_variable = get_independent_variable(file_name);
             let total_time = &(&(&data_frame["utime"] + &data_frame["stime"])
@@ -52,15 +60,15 @@ fn aggregate_processing_time(processing_models: &Vec<RequestProcessingModel>) {
     plot_aggregate_data("processing_time".to_string(), results);
 }
 
-fn aggregate_memory_usage(processing_models: &Vec<RequestProcessingModel>) {
+fn aggregate_memory_usage(independent_var: &str, processing_models: &Vec<RequestProcessingModel>) {
     let mut results = vec![];
     for processing_model in processing_models {
         let mut aggregates: ResultVector = vec![];
-        let data_frames = get_data_frames(processing_model, "ru");
+        let data_frames = get_data_frames(processing_model, independent_var, "ru");
         for (file_name, data_frame) in data_frames {
-            let independet_variable = get_independent_variable(file_name);
+            let independent_variable = get_independent_variable(file_name);
             let vmhwm = &data_frame["vmhwm"];
-            append_aggregates(&mut aggregates, independet_variable, vmhwm);
+            append_aggregates(&mut aggregates, independent_variable, vmhwm);
         }
         write_results_as_csv(
             &mut aggregates,
@@ -71,11 +79,11 @@ fn aggregate_memory_usage(processing_models: &Vec<RequestProcessingModel>) {
     plot_aggregate_data("memory_usage".to_string(), results);
 }
 
-fn aggregate_alert_delays(processing_models: &Vec<RequestProcessingModel>) {
+fn aggregate_alert_delays(independent_var: &str, processing_models: &Vec<RequestProcessingModel>) {
     let mut results = vec![];
     for processing_model in processing_models {
         let mut aggregates: ResultVector = vec![];
-        let dir_entries = get_relevant_files(processing_model, "ad");
+        let dir_entries = get_relevant_files(processing_model, independent_var, "ad");
         for dir_entry in dir_entries {
             let no_motor_groups =
                 get_independent_variable(dir_entry.file_name().into_string().unwrap());
@@ -91,11 +99,14 @@ fn aggregate_alert_delays(processing_models: &Vec<RequestProcessingModel>) {
     plot_aggregate_data("alert_delays".to_string(), results);
 }
 
-fn aggregate_alert_failures(processing_models: &Vec<RequestProcessingModel>) {
+fn aggregate_alert_failures(
+    independent_var: &str,
+    processing_models: &Vec<RequestProcessingModel>,
+) {
     let mut results = vec![];
     for processing_model in processing_models {
         let mut aggregates: ResultVector = vec![];
-        let dir_entries = get_relevant_files(processing_model, "af");
+        let dir_entries = get_relevant_files(processing_model, independent_var, "af");
         for dir_entry in dir_entries {
             let no_motor_groups =
                 get_independent_variable(dir_entry.file_name().into_string().unwrap());
@@ -109,6 +120,25 @@ fn aggregate_alert_failures(processing_models: &Vec<RequestProcessingModel>) {
         results.push((*processing_model, aggregates));
     }
     plot_aggregate_data("alert_failures".to_string(), results);
+}
+
+fn aggregate_load_average(independent_var: &str, processing_models: &Vec<RequestProcessingModel>) {
+    let mut results = vec![];
+    for processing_model in processing_models {
+        let mut aggregates: ResultVector = vec![];
+        let data_frames = get_data_frames(processing_model, independent_var, "ru");
+        for (file_name, data_frame) in data_frames {
+            let independent_variable = get_independent_variable(file_name);
+            let load_average = &data_frame["load_average"];
+            append_aggregates(&mut aggregates, independent_variable, load_average);
+        }
+        write_results_as_csv(
+            &mut aggregates,
+            format!("{}_load_average.csv", processing_model.to_string()),
+        );
+        results.push((*processing_model, aggregates));
+    }
+    plot_aggregate_data("load_average".to_string(), results);
 }
 
 fn read_csv_to_series(dir_entry: DirEntry) -> Series {
@@ -162,6 +192,7 @@ fn write_results_as_csv(aggregates: &mut ResultVector, file_name: String) {
 
 fn get_data_frames(
     processing_model: &RequestProcessingModel,
+    independent_var: &str,
     file_name_marker: &str,
 ) -> Vec<(String, DataFrame)> {
     let mut schema = Schema::new();
@@ -172,10 +203,11 @@ fn get_data_frames(
     schema.with_column("cstime".parse().unwrap(), DataType::Int64);
     schema.with_column("vmhwm".parse().unwrap(), DataType::Int64);
     schema.with_column("vmpeak".parse().unwrap(), DataType::Int64);
+    schema.with_column("load_average".parse().unwrap(), DataType::Float32);
 
     let schema = Arc::new(schema);
 
-    get_relevant_files(processing_model, file_name_marker)
+    get_relevant_files(processing_model, independent_var, file_name_marker)
         .iter()
         .map(|dir_entry| {
             let schema = Arc::clone(&schema);
@@ -200,6 +232,7 @@ fn get_data_frames(
 
 fn get_relevant_files(
     processing_model: &RequestProcessingModel,
+    independent_var: &str,
     file_name_marker: &str,
 ) -> Vec<DirEntry> {
     read_dir(RAW_DATA_PATH)
@@ -209,7 +242,7 @@ fn get_relevant_files(
             if let Ok(file_name) = dir_entry.file_name().into_string() {
                 if file_name.contains(&processing_model.to_string())
                     && file_name.contains(file_name_marker)
-                    && file_name.starts_with("16_")
+                    && file_name.starts_with(independent_var)
                 {
                     return Some(dir_entry);
                 }

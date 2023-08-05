@@ -1,4 +1,10 @@
-FROM rustlang/rust:nightly as builder
+FROM --platform=$TARGETPLATFORM fedora:latest as rust_fedora_builder
+
+RUN dnf install -y gcc
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+FROM rust_fedora_builder as builder
 
 WORKDIR /usr/src/data_transfer_objects
 COPY data_transfer_objects .
@@ -10,8 +16,8 @@ WORKDIR /usr/src/cloud_server
 COPY cloud_server .
 RUN cargo install --path .
 
-FROM debian:buster-slim
+FROM fedora:latest
 COPY cloud_server/resources/config-production.toml /etc/config-production.toml
-COPY --from=builder /usr/local/cargo/bin/cloud_server /usr/local/bin/cloud_server
+COPY --from=builder /root/.cargo/bin/cloud_server /usr/local/bin/cloud_server
 ENV RUST_LOG=info
 CMD ["cloud_server"]

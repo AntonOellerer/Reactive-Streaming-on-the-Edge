@@ -23,6 +23,7 @@ use postcard::accumulator::{CobsAccumulator, FeedResult};
 use postcard::to_allocvec_cobs;
 #[cfg(feature = "std")]
 use procfs::process::Process;
+use procfs::LoadAverage;
 #[cfg(feature = "std")]
 use serde::Deserialize;
 
@@ -126,6 +127,7 @@ pub fn get_duration_to_end(start_time: Duration, duration: Duration) -> Duration
 #[cfg(feature = "std")]
 pub fn save_benchmark_readings(id: u32, benchmark_data_type: BenchmarkDataType) {
     info!("Saving benchmark readings");
+    let load_average = LoadAverage::new().expect("Could not get load average").one;
     let me = Process::myself().expect("Could not get process info handle");
     let (cstime, cutime) = me
         .tasks()
@@ -145,6 +147,7 @@ pub fn save_benchmark_readings(id: u32, benchmark_data_type: BenchmarkDataType) 
         children_time_spent_in_kernel_mode: cstime,
         peak_resident_set_size: status.vmhwm.expect("Could not get vmhw"),
         peak_virtual_memory_size: status.vmpeak.expect("Could not get vmrss"),
+        load_average,
         benchmark_data_type,
     };
     let vec: Vec<u8> =
