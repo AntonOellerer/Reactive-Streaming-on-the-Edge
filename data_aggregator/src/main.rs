@@ -7,7 +7,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use plotters::prelude::{
-    ChartBuilder, ErrorBar, IntoDrawingArea, SVGBackend, BLACK, BLUE, GREEN, RED, WHITE,
+    ChartBuilder, ErrorBar, IntoDrawingArea, IntoLogRange, SVGBackend, BLACK, BLUE, GREEN, RED,
+    WHITE,
 };
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
@@ -395,7 +396,7 @@ fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<ResultSet
     let columns = aggregate_matrix.first().unwrap().results.len();
     let file_name = format!("figures/{data_name}.svg");
     let root_drawing_area =
-        SVGBackend::new(&file_name, ((columns * 1024) as u32, (rows * 1024) as u32))
+        SVGBackend::new(&file_name, ((columns * 512) as u32, (rows * 512) as u32))
             .into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
     root_drawing_area
@@ -407,7 +408,10 @@ fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<ResultSet
             let mut chart = ChartBuilder::on(&panels[y_index * columns + x_index])
                 .margin(25)
                 .set_left_and_bottom_label_area_size(20)
-                .build_cartesian_2d(get_independent_range(diagram), get_dependent_range(diagram))
+                .build_cartesian_2d(
+                    get_independent_range(diagram).log_scale(),
+                    get_dependent_range(diagram),
+                )
                 .unwrap();
             chart
                 .configure_mesh()
@@ -425,7 +429,7 @@ fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<ResultSet
                 chart
                     .plotting_area()
                     .draw(&ErrorBar::new_vertical(
-                        frame.independent_variable,
+                        frame.independent_variable as i32,
                         frame.data.1 - frame.data.3,
                         frame.data.1,
                         frame.data.1 + frame.data.3,
@@ -443,24 +447,24 @@ fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<ResultSet
     }
 }
 
-fn get_independent_range(diagram: &ResultDiagram<ResultSet>) -> Range<usize> {
-    let independent_averages = diagram
+fn get_independent_range(diagram: &ResultDiagram<ResultSet>) -> Range<i32> {
+    let independent_values = diagram
         .frames
         .iter()
-        .map(|frame| frame.independent_variable);
-    independent_averages
+        .map(|frame| frame.independent_variable as i32);
+    independent_values
         .clone()
         .min()
         .expect("At least one measurement should be present")
-        ..independent_averages
+        ..independent_values
             .max()
             .expect("At least one measurement should be present")
 }
 
 fn get_dependent_range(diagram: &ResultDiagram<ResultSet>) -> Range<f64> {
-    let independent_averages = diagram.frames.iter().map(|frame| frame.data);
-    0f64..independent_averages
-        .map(|result| result.2 + result.3)
+    let dependent_values = diagram.frames.iter().map(|frame| frame.data);
+    0f64..dependent_values
+        .map(|result| result.1 + result.3)
         .reduce(f64::max)
         .expect("At least one measurement should be present")
 }
