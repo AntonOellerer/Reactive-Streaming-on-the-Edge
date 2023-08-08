@@ -17,8 +17,6 @@ use data_transfer_objects::{
     NetworkConfig, RequestProcessingModel,
 };
 
-mod validator;
-
 #[cfg(debug_assertions)]
 const CONFIG_PATH: &str = "resources/config-debug.toml";
 #[cfg(not(debug_assertions))]

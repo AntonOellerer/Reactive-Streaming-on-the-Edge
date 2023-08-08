@@ -14,11 +14,10 @@ use scheduler::Scheduler;
 use std::io::Write;
 #[cfg(feature = "rpi")]
 use std::mem::size_of;
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream};
 #[cfg(feature = "rpi")]
 use std::ops::Shl;
 use std::ops::{BitAnd, Shr};
-use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 
@@ -60,10 +59,7 @@ fn handle_sensors(
     tx: Sender<SensorMessage>,
     pool: &ThreadPool,
 ) -> Vec<RemoteHandle<()>> {
-    let mut handle_list = setup_tcp_sensor_handlers(&args, tx.clone(), pool);
-    #[cfg(feature = "rpi")]
-    handle_list.push(setup_i2c_sensor_handlers(&args, tx, pool));
-    handle_list
+    setup_tcp_sensor_handlers(&args, tx.clone(), pool)
 }
 
 fn setup_tcp_sensor_handlers(

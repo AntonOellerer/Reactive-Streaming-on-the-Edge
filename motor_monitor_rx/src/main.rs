@@ -87,16 +87,15 @@ fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let motor_monitor_parameters: MotorMonitorParameters =
         utils::get_motor_monitor_parameters(&arguments);
-    let mut cloud_server =
-        TcpStream::connect(motor_monitor_parameters.motor_monitor_listen_address)
-            .expect("Could not open connection to cloud server");
+    let cloud_server = TcpStream::connect(motor_monitor_parameters.motor_monitor_listen_address)
+        .expect("Could not open connection to cloud server");
     let pool = ThreadPoolBuilder::new()
         .pool_size(motor_monitor_parameters.thread_pool_size)
         .create()
         .unwrap();
     info!("Running procedure");
     let handle =
-        execute_reactive_streaming_procedure(&motor_monitor_parameters, &mut cloud_server, pool);
+        execute_reactive_streaming_procedure(&motor_monitor_parameters, &cloud_server, pool);
     futures::executor::block_on(handle);
     info!("Processing completed");
     utils::save_benchmark_readings(0, BenchmarkDataType::MotorMonitor);
@@ -105,7 +104,7 @@ fn main() {
 
 fn execute_reactive_streaming_procedure(
     motor_monitor_parameters: &MotorMonitorParameters,
-    cloud_server: &mut TcpStream,
+    cloud_server: &TcpStream,
     pool: ThreadPool,
 ) -> RemoteHandle<()> {
     let mut cloud_server = cloud_server
