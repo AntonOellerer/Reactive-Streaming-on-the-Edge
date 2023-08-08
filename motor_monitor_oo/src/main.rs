@@ -1,6 +1,6 @@
 #![feature(let_chains)]
 
-use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::ops::Shl;
 use std::str::FromStr;
 use std::sync::mpsc;
@@ -9,7 +9,7 @@ use std::time::Duration;
 use env_logger::Target;
 use futures::executor::{ThreadPool, ThreadPoolBuilder};
 use futures::future::RemoteHandle;
-use log::info;
+use log::{debug, info};
 
 use data_transfer_objects::{BenchmarkDataType, MotorMonitorParameters};
 use scheduler::Scheduler;
@@ -48,6 +48,12 @@ fn setup_threads(
         "Connected to {}",
         motor_monitor_parameters.motor_monitor_listen_address
     );
+    let listen_address = SocketAddr::new(
+        IpAddr::from_str("0.0.0.0").unwrap(),
+        motor_monitor_parameters.sensor_listen_address.port(),
+    );
+    let listener = TcpListener::bind(listen_address).unwrap();
+    debug!("Bound to {:?}", listen_address);
     let mut handles = vec![];
     for motor_id in 0..motor_monitor_parameters.number_of_tcp_motor_groups {
         let (sender, receiver) = mpsc::channel();
@@ -59,10 +65,7 @@ fn setup_threads(
                 Duration::from_millis(motor_monitor_parameters.window_size_ms),
                 Duration::from_millis(motor_monitor_parameters.window_sampling_interval as u64),
                 sender.clone(),
-                SocketAddr::new(
-                    IpAddr::from_str("0.0.0.0").unwrap(),
-                    motor_monitor_parameters.sensor_listen_address.port() + full_id as u16,
-                ),
+                listener.try_clone().unwrap(),
             );
             handles.push(thread_pool.schedule(move || sensor.run()))
         }

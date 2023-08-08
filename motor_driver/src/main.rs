@@ -1,11 +1,12 @@
-use log::{error, info};
-use postcard::to_allocvec;
-use serde::Deserialize;
 use std::io::Write;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::ops::Shl;
 use std::process::{Command, Stdio};
 use std::{fs, thread};
+
+use log::{error, info};
+use postcard::to_allocvec;
+use serde::Deserialize;
 use threadpool::ThreadPool;
 
 use data_transfer_objects::{
@@ -113,11 +114,8 @@ fn get_motor_monitor_listen_address(
     match motor_monitor_parameters.request_processing_model {
         RequestProcessingModel::ReactiveStreaming => motor_monitor_parameters.sensor_listen_address,
         RequestProcessingModel::ClientServer => motor_monitor_parameters.sensor_listen_address,
+        RequestProcessingModel::ObjectOriented => motor_monitor_parameters.sensor_listen_address,
         RequestProcessingModel::SpringQL => SocketAddr::new(
-            motor_monitor_parameters.sensor_listen_address.ip(),
-            motor_monitor_parameters.sensor_listen_address.port() + index,
-        ),
-        RequestProcessingModel::ObjectOriented => SocketAddr::new(
             motor_monitor_parameters.sensor_listen_address.ip(),
             motor_monitor_parameters.sensor_listen_address.port() + index,
         ),

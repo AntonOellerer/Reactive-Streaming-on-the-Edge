@@ -1,6 +1,6 @@
 use data_transfer_objects::SensorMessage;
 use log::debug;
-use std::net::{SocketAddr, TcpListener};
+use std::net::TcpListener;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
@@ -44,7 +44,7 @@ impl SlidingWindow {
 pub struct Sensor {
     // sensor_id: u32,
     pub monitor_connection: Sender<SensorAverage>,
-    pub listen_addr: SocketAddr,
+    pub listener: TcpListener,
     pub interval: Duration,
     window: SlidingWindow,
 }
@@ -54,11 +54,11 @@ impl Sensor {
         window_size: Duration,
         interval: Duration,
         monitor_connection: Sender<SensorAverage>,
-        listen_addr: SocketAddr,
+        listener: TcpListener,
     ) -> Sensor {
         Sensor {
             monitor_connection,
-            listen_addr,
+            listener,
             interval,
             window: SlidingWindow {
                 size: window_size,
@@ -69,9 +69,7 @@ impl Sensor {
     }
 
     pub fn run(mut self) {
-        let listener = TcpListener::bind(self.listen_addr).unwrap();
-        debug!("Bound to {:?}", self.listen_addr);
-        let (mut stream, _) = listener.accept().unwrap();
+        let (mut stream, _) = self.listener.accept().unwrap();
         debug!("Accepted stream");
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
@@ -79,7 +77,7 @@ impl Sensor {
         while let Some(sensor_message) = utils::read_object::<SensorMessage>(&mut stream) {
             self.handle_sensor_message(sensor_message);
         }
-        debug!("Exiting sensor {}", self.listen_addr);
+        debug!("Exiting sensor");
     }
 
     fn handle_sensor_message(&mut self, message: SensorMessage) {
