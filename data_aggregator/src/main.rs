@@ -1,28 +1,24 @@
-use std::cmp::Ordering;
-use std::env::Args;
-use std::fs;
-use std::fs::{read_dir, DirEntry};
-use std::ops::Range;
-use std::str::FromStr;
-use std::sync::Arc;
-
+use data_transfer_objects::RequestProcessingModel;
 use plotters::prelude::{
-    ChartBuilder, ErrorBar, IntoDrawingArea, IntoLogRange, SVGBackend, BLACK, BLUE, GREEN, RED,
-    WHITE,
+    Boxplot, ChartBuilder, IntoDrawingArea, IntoLogRange, Quartiles, SVGBackend, BLACK, BLUE,
+    GREEN, RED, WHITE,
 };
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
 use polars::prelude::SerReader;
-use polars::prelude::{ChunkVar, Series};
+use polars::prelude::Series;
 use polars::prelude::{CsvReader, Schema};
-
-use data_transfer_objects::RequestProcessingModel;
+use std::cmp::Ordering;
+use std::env::Args;
+use std::fs;
+use std::fs::{read_dir, DirEntry, OpenOptions};
+use std::io::Write;
+use std::ops::Range;
+use std::str::FromStr;
+use std::sync::Arc;
 
 const RAW_DATA_PATH: &str = "../bench_executor/";
 const X_LABEL: &str = "Window Size";
-
-// type ResultVector = Vec<(Axes, f64, f64, f64, f64)>;
-type ResultSet = (f64, f64, f64, f64);
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 struct ResultFrame<T> {
@@ -65,7 +61,6 @@ fn main() {
         data_frame["load_average"].clone()
     });
     aggregate_series("ad", "alert_delays", &axis_indices);
-    // aggregate_alert_failures(&axis_indices, &processing_models);
 }
 
 fn get_axes_indices(args: &mut Args) -> Axes {
@@ -80,7 +75,7 @@ fn get_axes_indices(args: &mut Args) -> Axes {
 }
 
 fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFrame) -> Series) {
-    let mut aggregates: ResultMatrix<ResultSet> = vec![];
+    let mut aggregates: ResultMatrix<Quartiles> = vec![];
     let result_matrix = get_data_frames(axis_indices, "ru");
     for row in result_matrix {
         let mut aggregates_row = ResultRow {
@@ -95,10 +90,19 @@ fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFr
             for frame in diagram.frames {
                 let data_frame = frame.data;
                 let data_series = extract_data(&data_frame);
+                let aggregate = get_aggregates(&data_series);
+                save_as_csv(
+                    data_name,
+                    row.independent_variable,
+                    diagram.independent_variable,
+                    frame.independent_variable,
+                    frame.processing_model,
+                    &aggregate,
+                );
                 let aggregate_frame = ResultFrame {
                     independent_variable: frame.independent_variable,
                     processing_model: frame.processing_model,
-                    data: get_aggregates(&data_series),
+                    data: aggregate,
                 };
                 aggregate_diagram.frames.push(aggregate_frame);
             }
@@ -109,8 +113,38 @@ fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFr
     plot_aggregate_data(data_name, aggregates);
 }
 
+fn save_as_csv(
+    data_name: &str,
+    y_outer: usize,
+    x_outer: usize,
+    x_inner: usize,
+    processing_model: RequestProcessingModel,
+    quartiles: &Quartiles,
+) {
+    let [lower_fence, lower_quartile, median, upper_quartile, upper_fence] = quartiles.values();
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(format!(
+            "{data_name}_{y_outer}_{x_outer}_{processing_model:?}.csv"
+        ))
+        .unwrap();
+    if file.metadata().unwrap().len() == 0 {
+        writeln!(
+            file,
+            "independent_var, lower_fence, lower_quartile, median, upper_quartile, upper_fence"
+        )
+        .unwrap();
+    }
+    writeln!(
+        file,
+        "{x_inner}, {lower_fence}, {lower_quartile}, {median}, {upper_quartile}, {upper_fence}"
+    )
+    .unwrap();
+}
+
 fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes) {
-    let mut aggregates: ResultMatrix<ResultSet> = vec![];
+    let mut aggregates: ResultMatrix<Quartiles> = vec![];
     let result_matrix = get_series(axis_indices, file_name_marker);
     for row in result_matrix {
         let mut aggregates_row = ResultRow {
@@ -137,57 +171,6 @@ fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes
     plot_aggregate_data(data_name, aggregates);
 }
 
-// fn aggregate_alert_delays(axis_indices: &Axes, processing_models: &Vec<RequestProcessingModel>) {
-//     let mut results = vec![];
-//     for processing_model in processing_models {
-//         let mut aggregates: ResultVector = vec![];
-//         let dir_entries = get_relevant_files(processing_model, "ad");
-//         for dir_entry in dir_entries {
-//             let axes =
-//                 get_axis_variables(axis_indices, dir_entry.file_name().into_string().unwrap());
-//             let series = read_csv_to_series(dir_entry);
-//             append_aggregates(&mut aggregates, axes, &series);
-//         }
-//         write_results_as_csv(
-//             &mut aggregates,
-//             format!("{}_delays.csv", processing_model.to_string()),
-//         );
-//         results.push((*processing_model, aggregates));
-//     }
-//     plot_aggregate_data("alert_delays".to_string(), results);
-// }
-//
-// fn aggregate_alert_failures(axis_indices: &Axes, processing_models: &Vec<RequestProcessingModel>) {
-//     let mut results = vec![];
-//     for processing_model in processing_models {
-//         let mut aggregates: ResultVector = vec![];
-//         let dir_entries = get_relevant_files(processing_model, "af");
-//         for dir_entry in dir_entries {
-//             let axes =
-//                 get_axis_variables(axis_indices, dir_entry.file_name().into_string().unwrap());
-//             let series = read_csv_to_series(dir_entry);
-//             append_aggregates(&mut aggregates, axes, &series);
-//         }
-//         write_results_as_csv(
-//             &mut aggregates,
-//             format!("{}_failures.csv", processing_model.to_string()),
-//         );
-//         results.push((*processing_model, aggregates));
-//     }
-//     plot_aggregate_data("alert_failures".to_string(), results);
-// }
-//
-
-fn get_independent_variable(file_name: String) -> i32 {
-    let motor_groups = file_name
-        .split('_')
-        .nth(2)
-        .expect("Resource usage file should start with the number of motor groups")
-        .parse::<i32>()
-        .expect("nth number should be parsable to integer");
-    motor_groups
-}
-
 fn get_axis_variables(axes: &Axes, file_name: &str) -> Axes {
     let independent_variables = get_independent_variables(file_name);
     Axes {
@@ -209,53 +192,26 @@ fn get_independent_variables(file_name: &str) -> Vec<usize> {
         .collect::<Vec<usize>>()
 }
 
-fn get_aggregates(series: &Series) -> ResultSet {
-    let std = match series.f64() {
-        Ok(cast) => cast.std(1).unwrap_or(0.0),
-        Err(_) => match series.i64() {
-            Ok(cast) => cast.std(1).unwrap_or(0.0),
-            Err(_) => 0.0,
-        },
-    };
-    (
-        series.min().unwrap_or(0.0),
-        series.mean().unwrap_or(0.0),
-        series.max().unwrap_or(0.0),
-        std,
-    )
+fn get_aggregates(series: &Series) -> Quartiles {
+    if series.is_empty() {
+        Quartiles::new(&[0])
+    } else {
+        match series.f64() {
+            Ok(chunked) => Quartiles::new(&chunked.into_no_null_iter().collect::<Vec<f64>>()),
+            Err(_) => match series.f32() {
+                Ok(chunked) => Quartiles::new(&chunked.into_no_null_iter().collect::<Vec<f32>>()),
+                Err(_) => Quartiles::new(
+                    &series
+                        .i64()
+                        .unwrap()
+                        .into_no_null_iter()
+                        .map(|i| i as i32)
+                        .collect::<Vec<i32>>(),
+                ),
+            },
+        }
+    }
 }
-
-// fn append_aggregates(aggregates: &mut ResultVector, axes: Axes, series: &Series) {
-//     let std = match series.f64() {
-//         Ok(cast) => cast.std(1).unwrap_or(0.0),
-//         Err(_) => match series.i64() {
-//             Ok(cast) => cast.std(1).unwrap_or(0.0),
-//             Err(_) => 0.0,
-//         },
-//     };
-//     aggregates.push((
-//         axes,
-//         series.min().unwrap_or(0.0),
-//         series.mean().unwrap_or(0.0),
-//         series.max().unwrap_or(0.0),
-//         std,
-//     ));
-// }
-
-// fn write_results_as_csv(aggregates: &mut ResultVector, file_name: String) {
-//     let result = aggregates
-//         .iter()
-//         .map(|(axes, min, mean, max, std)| {
-//             format!(
-//                 "{}, {}, {},{min},{mean},{max},{std}",
-//                 axes.y_outer, axes.x_outer, axes.x_inner
-//             )
-//         })
-//         .collect::<Vec<String>>()
-//         .join("\n");
-//     fs::write(file_name, format!("no,min,mean,max,std\n{result}"))
-//         .expect("Should be able to write processing model results");
-// }
 
 fn get_data_frames(axis_indices: &Axes, file_name_marker: &str) -> ResultMatrix<DataFrame> {
     let mut schema = Schema::new();
@@ -391,7 +347,7 @@ fn read_csv_to_series(dir_entry: &DirEntry) -> Series {
     series
 }
 
-fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<ResultSet>) {
+fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<Quartiles>) {
     let rows = aggregate_matrix.len();
     let columns = aggregate_matrix.first().unwrap().results.len();
     let file_name = format!("figures/{data_name}.svg");
@@ -428,43 +384,30 @@ fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<ResultSet
                 };
                 chart
                     .plotting_area()
-                    .draw(&ErrorBar::new_vertical(
-                        frame.independent_variable as i32,
-                        frame.data.1 - frame.data.3,
-                        frame.data.1,
-                        frame.data.1 + frame.data.3,
-                        style,
-                        10,
-                    ))
+                    .draw(
+                        &Boxplot::new_vertical(frame.independent_variable as i32, &frame.data)
+                            .style(style),
+                    )
                     .unwrap();
             }
-            // chart
-            //     .configure_series_labels()
-            //     .border_style(BLACK)
-            //     .draw()
-            //     .unwrap();
         }
     }
 }
 
-fn get_independent_range(diagram: &ResultDiagram<ResultSet>) -> Range<i32> {
+fn get_independent_range(diagram: &ResultDiagram<Quartiles>) -> Range<i32> {
     let independent_values = diagram
         .frames
         .iter()
         .map(|frame| frame.independent_variable as i32);
-    independent_values
-        .clone()
-        .min()
+    0i32..independent_values
+        .max()
         .expect("At least one measurement should be present")
-        ..independent_values
-            .max()
-            .expect("At least one measurement should be present")
 }
 
-fn get_dependent_range(diagram: &ResultDiagram<ResultSet>) -> Range<f64> {
-    let dependent_values = diagram.frames.iter().map(|frame| frame.data);
-    0f64..dependent_values
-        .map(|result| result.1 + result.3)
-        .reduce(f64::max)
+fn get_dependent_range(diagram: &ResultDiagram<Quartiles>) -> Range<f32> {
+    let dependent_values = diagram.frames.iter().map(|frame| &frame.data);
+    0f32..dependent_values
+        .map(|result| result.values()[4])
+        .reduce(f32::max)
         .expect("At least one measurement should be present")
 }
