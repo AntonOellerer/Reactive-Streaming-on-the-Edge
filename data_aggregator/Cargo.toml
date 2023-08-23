@@ -9,3 +9,4 @@ edition = "2021"
 data_transfer_objects = { path = "../data_transfer_objects" }
 plotters = "0.3.4"
 polars = "0.31.1"
+statrs = "0.16"

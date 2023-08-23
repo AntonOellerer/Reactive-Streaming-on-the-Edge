@@ -1,13 +1,5 @@
 extern crate core;
 
-use bollard::errors::Error;
-use bollard::models::{Network, Service, ServiceUpdateResponse};
-use bollard::network::InspectNetworkOptions;
-use bollard::service::{InspectServiceOptions, UpdateServiceOptions};
-use bollard::{ClientVersion, Docker};
-use futures::FutureExt;
-use log::{info, warn};
-use serde::Deserialize;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::IpAddr;
@@ -17,11 +9,21 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::{fs, thread};
 
+use bollard::errors::Error;
+use bollard::models::{Network, Service, ServiceUpdateResponse};
+use bollard::network::InspectNetworkOptions;
+use bollard::service::{InspectServiceOptions, UpdateServiceOptions};
+use bollard::{ClientVersion, Docker};
+use futures::FutureExt;
+use log::{info, warn};
+use serde::Deserialize;
+
 use data_transfer_objects::{NetworkConfig, RequestProcessingModel};
 
 #[derive(Deserialize)]
 struct Config {
-    repetitions: u32,
+    inner_repetitions: u32,
+    outer_repetitions: u32,
     motor_groups_tcp: Vec<u16>,
     durations: Vec<u64>,
     request_processing_models: Vec<RequestProcessingModel>,
@@ -89,74 +91,82 @@ async fn main() {
     )
     .unwrap();
     let mut network_config = restart_system(&docker).await;
-    for duration in &config.durations {
-        for no_motor_groups in &config.motor_groups_tcp {
-            for window_size_ms in &config.window_size_ms {
-                // for window_sampling_interval in &config.window_sampling_interval_ms {
-                let window_sampling_interval = window_size_ms;
-                for sensor_sampling_interval in &config.sensor_sampling_interval_ms {
-                    // let window_sampling_interval = sensor_sampling_interval;
-                    // let window_size_ms = sensor_sampling_interval * 5;
-                    // for thread_pool_size in &config.thread_pool_sizes {
-                    if *sensor_sampling_interval as u64 > *window_size_ms
-                        || *window_sampling_interval > *window_size_ms
-                    {
-                        continue;
-                    }
-                    scale_service(*no_motor_groups, &docker, &mut network_config).await;
-                    for request_processing_model in &config.request_processing_models {
-                        let thread_pool_size = match request_processing_model {
-                            RequestProcessingModel::ReactiveStreaming => 10 * 40,
-                            RequestProcessingModel::ClientServer => no_motor_groups * 4 + 1,
-                            RequestProcessingModel::SpringQL => no_motor_groups * 12,
-                            RequestProcessingModel::ObjectOriented => no_motor_groups * 5,
-                        } as usize;
-                        let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_ms}_{window_sampling_interval}_{sensor_sampling_interval}_{thread_pool_size}_{}", request_processing_model.to_string());
-                        let resource_usage_file_name = format!("{file_name_base}_ru.csv");
-                        let mut resource_usage_file = OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(resource_usage_file_name.clone())
-                            .unwrap();
-                        let mut lines = fs::read_to_string(resource_usage_file_name)
-                            .unwrap()
-                            .lines()
-                            .count();
-                        if lines == 0 {
-                            writeln!(
-                                resource_usage_file,
-                                "id,utime,stime,cutime,cstime,vmhwm,vmpeak,load_average"
-                            )
-                            .unwrap();
-                            lines += 1;
+    for outer_repetition in 1..=config.outer_repetitions {
+        for duration in &config.durations {
+            for no_motor_groups in &config.motor_groups_tcp {
+                for window_size_ms in &config.window_size_ms {
+                    // for window_sampling_interval in &config.window_sampling_interval_ms {
+                    let window_sampling_interval = window_size_ms;
+                    for sensor_sampling_interval in &config.sensor_sampling_interval_ms {
+                        // let window_sampling_interval = sensor_sampling_interval;
+                        // let window_size_ms = sensor_sampling_interval * 5;
+                        // for thread_pool_size in &config.thread_pool_sizes {
+                        if *sensor_sampling_interval as u64 > *window_size_ms
+                            || *window_sampling_interval > *window_size_ms
+                        {
+                            continue;
                         }
-                        for i in (lines - 1)..config.repetitions as usize {
-                            info!("{i} {no_motor_groups} {duration} {window_size_ms} {window_sampling_interval} {sensor_sampling_interval} {thread_pool_size} {}", request_processing_model.to_string());
-                            let results = execute_test_run(
-                                *no_motor_groups,
-                                *duration,
-                                *window_size_ms,
-                                *window_sampling_interval as u32,
-                                *sensor_sampling_interval,
-                                thread_pool_size,
-                                *request_processing_model,
-                            );
-                            match results {
-                                Ok(results) => {
-                                    write!(resource_usage_file, "{}", results.0).unwrap();
-                                    persist_alert_delays(&file_name_base, results.1);
-                                    persist_alert_failures(&file_name_base, results.2);
-                                }
-                                Err(_) => {
-                                    network_config = restart_system(&docker).await;
+                        scale_service(*no_motor_groups, &docker, &mut network_config).await;
+                        for request_processing_model in &config.request_processing_models {
+                            let thread_pool_size = match request_processing_model {
+                                RequestProcessingModel::ReactiveStreaming => 10 * 40,
+                                RequestProcessingModel::ClientServer => no_motor_groups * 4 + 1,
+                                RequestProcessingModel::SpringQL => no_motor_groups * 12,
+                                RequestProcessingModel::ObjectOriented => no_motor_groups * 5,
+                            } as usize;
+                            let file_name_base = format!("{no_motor_groups}_{duration}_{window_size_ms}_{window_sampling_interval}_{sensor_sampling_interval}_{thread_pool_size}_{}", request_processing_model.to_string());
+                            let resource_usage_file_name = format!("{file_name_base}_ru.csv");
+                            let mut resource_usage_file = OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(resource_usage_file_name.clone())
+                                .unwrap();
+                            let mut lines = fs::read_to_string(resource_usage_file_name)
+                                .unwrap()
+                                .lines()
+                                .count();
+                            if lines == 0 {
+                                writeln!(
+                                    resource_usage_file,
+                                    "id,utime,stime,cutime,cstime,vmhwm,vmpeak,load_average"
+                                )
+                                .unwrap();
+                                lines += 1;
+                            }
+                            if (lines - 1) >= (config.inner_repetitions * outer_repetition) as usize
+                            {
+                                continue;
+                            }
+                            for inner_repetition in
+                                (lines - 1)..(config.inner_repetitions * outer_repetition) as usize
+                            {
+                                info!("{inner_repetition} {no_motor_groups} {duration} {window_size_ms} {window_sampling_interval} {sensor_sampling_interval} {thread_pool_size} {}", request_processing_model.to_string());
+                                let results = execute_test_run(
+                                    *no_motor_groups,
+                                    *duration,
+                                    *window_size_ms,
+                                    *window_sampling_interval as u32,
+                                    *sensor_sampling_interval,
+                                    thread_pool_size,
+                                    *request_processing_model,
+                                );
+                                match results {
+                                    Ok(results) => {
+                                        write!(resource_usage_file, "{}", results.0).unwrap();
+                                        persist_alert_delays(&file_name_base, results.1);
+                                        persist_alert_failures(&file_name_base, results.2);
+                                    }
+                                    Err(_) => {
+                                        network_config = restart_system(&docker).await;
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                // }
+                // }
             }
-            // }
-            // }
         }
     }
 }

@@ -1,13 +1,3 @@
-use data_transfer_objects::RequestProcessingModel;
-use plotters::prelude::{
-    Boxplot, ChartBuilder, IntoDrawingArea, IntoLogRange, Quartiles, SVGBackend, BLACK, BLUE,
-    GREEN, RED, WHITE,
-};
-use polars::datatypes::DataType;
-use polars::frame::DataFrame;
-use polars::prelude::SerReader;
-use polars::prelude::Series;
-use polars::prelude::{CsvReader, Schema};
 use std::cmp::Ordering;
 use std::env::Args;
 use std::fs;
@@ -17,8 +7,24 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use plotters::prelude::{
+    Boxplot, ChartBuilder, IntoDrawingArea, IntoLogRange, Quartiles, SVGBackend, BLACK, BLUE,
+    GREEN, RED, WHITE,
+};
+use polars::datatypes::DataType;
+use polars::export::ahash::{HashMap, HashMapExt};
+use polars::frame::DataFrame;
+use polars::prelude::Series;
+use polars::prelude::{ChunkVar, SerReader};
+use polars::prelude::{CsvReader, Schema};
+use statrs::distribution::{ContinuousCDF, StudentsT};
+
+use data_transfer_objects::RequestProcessingModel;
+
 const RAW_DATA_PATH: &str = "../bench_executor/";
 const X_LABEL: &str = "Window Size";
+
+const SIGNIFICANCE_LEVEL: f64 = 0.05;
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 struct ResultFrame<T> {
@@ -87,7 +93,7 @@ fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFr
                 independent_variable: diagram.independent_variable,
                 frames: vec![],
             };
-            for frame in diagram.frames {
+            for frame in diagram.frames.clone() {
                 let data_frame = frame.data;
                 let data_series = extract_data(&data_frame);
                 let aggregate = get_aggregates(&data_series);
@@ -106,11 +112,63 @@ fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFr
                 };
                 aggregate_diagram.frames.push(aggregate_frame);
             }
+            diagram
+                .frames
+                .iter()
+                .fold(HashMap::new(), |mut acc, frame| {
+                    let entry = acc
+                        .entry(frame.independent_variable)
+                        .or_insert((None, None));
+                    if frame.processing_model == RequestProcessingModel::ReactiveStreaming {
+                        entry.0 = Some(&frame.data)
+                    } else {
+                        entry.1 = Some(&frame.data)
+                    }
+                    acc
+                })
+                .iter()
+                .filter(|(_, (rx_frame, oo_frame))| rx_frame.is_some() && oo_frame.is_some())
+                .for_each(|(key, (rx_frame, oo_frame))| {
+                    let rx_series = extract_data(rx_frame.unwrap());
+                    let oo_series = extract_data(oo_frame.unwrap());
+                    let p_value = t_test(&rx_series, &oo_series); //rx > oo
+                    if p_value > SIGNIFICANCE_LEVEL {
+                        println!(
+                            "{data_name} {} {} {key} {p_value}",
+                            row.independent_variable, diagram.independent_variable
+                        )
+                    }
+                });
             aggregates_row.results.push(aggregate_diagram);
         }
         aggregates.push(aggregates_row);
     }
     plot_aggregate_data(data_name, aggregates);
+}
+
+fn t_test(series1: &Series, series2: &Series) -> f64 {
+    let min_length = std::cmp::min(series1.len(), series2.len());
+    if min_length == 0 {
+        return 0f64;
+    }
+    let difference = series1.head(Some(min_length)) - series2.head(Some(min_length));
+    let diff_mean = difference.mean().unwrap();
+    let diff_std = match difference.i64() {
+        Ok(i) => i.std(1).unwrap(),
+        Err(_) => match difference.f32() {
+            Ok(i) => i.std(1).unwrap() as f64,
+            Err(_) => difference.f64().unwrap().std(1).unwrap(),
+        },
+    };
+    let sample_size = difference.len() as f64;
+    let t = diff_mean / (diff_std / sample_size.sqrt());
+    let degrees_of_freedom = if sample_size <= 1f64 {
+        1f64
+    } else {
+        sample_size - 1f64
+    };
+    let t_dist = StudentsT::new(0.0, 1.0, degrees_of_freedom).unwrap();
+    1_f64 - t_dist.cdf(t)
 }
 
 fn save_as_csv(
@@ -156,14 +214,47 @@ fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes
                 independent_variable: diagram.independent_variable,
                 frames: vec![],
             };
-            for frame in diagram.frames {
+            for frame in diagram.frames.clone() {
+                let quartiles = get_aggregates(&frame.data);
+                save_as_csv(
+                    data_name,
+                    row.independent_variable,
+                    diagram.independent_variable,
+                    frame.independent_variable,
+                    frame.processing_model,
+                    &quartiles,
+                );
                 let aggregate_frame = ResultFrame {
                     independent_variable: frame.independent_variable,
                     processing_model: frame.processing_model,
-                    data: get_aggregates(&frame.data),
+                    data: quartiles,
                 };
                 aggregate_diagram.frames.push(aggregate_frame);
             }
+            diagram
+                .frames
+                .iter()
+                .fold(HashMap::new(), |mut acc, frame| {
+                    let entry = acc
+                        .entry(frame.independent_variable)
+                        .or_insert((None, None));
+                    if frame.processing_model == RequestProcessingModel::ReactiveStreaming {
+                        entry.0 = Some(&frame.data)
+                    } else {
+                        entry.1 = Some(&frame.data)
+                    }
+                    acc
+                })
+                .iter()
+                .for_each(|(key, (rx_series, oo_series))| {
+                    let p_value = t_test(rx_series.unwrap(), oo_series.unwrap()); //rx > oo
+                    if p_value > SIGNIFICANCE_LEVEL {
+                        println!(
+                            "{data_name} {} {} {key} {p_value}",
+                            row.independent_variable, diagram.independent_variable
+                        )
+                    }
+                });
             aggregates_row.results.push(aggregate_diagram);
         }
         aggregates.push(aggregates_row);
