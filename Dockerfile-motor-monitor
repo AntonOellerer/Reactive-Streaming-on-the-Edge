@@ -11,7 +11,7 @@ COPY utils /usr/src/utils
 COPY scheduler /usr/src/scheduler
 WORKDIR /usr/src/motor_driver
 COPY ./motor_driver .
-RUN cargo install --path .
+RUN cargo install --target aarch64-unknown-linux-gnu --path .
 
 #FROM --platform=$TARGETPLATFORM rustlang/rust:nightly as monitor_cs_builder
 #
@@ -29,7 +29,7 @@ COPY utils /usr/src/utils
 COPY scheduler /usr/src/scheduler
 WORKDIR /usr/src/motor_monitor_rx
 COPY ./motor_monitor_rx .
-RUN cargo install --path .
+RUN cargo install --target aarch64-unknown-linux-gnu --path .
 
 #FROM --platform=$TARGETPLATFORM rustlang/rust:nightly as monitor_sql_builder
 #
@@ -47,7 +47,7 @@ COPY utils /usr/src/utils
 COPY scheduler /usr/src/scheduler
 WORKDIR /usr/src/motor_monitor_oo
 COPY ./motor_monitor_oo .
-RUN cargo install --path .
+RUN cargo install --target aarch64-unknown-linux-gnu --path .
 
 FROM --platform=$TARGETPLATFORM fedora:latest
 
