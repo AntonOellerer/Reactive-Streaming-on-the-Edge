@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::ops::Shl;
 use std::str::FromStr;

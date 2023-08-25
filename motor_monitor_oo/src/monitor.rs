@@ -2,7 +2,6 @@ use std::io::Write;
 use std::net::TcpStream;
 use std::ops::{BitAnd, Shr};
 use std::sync::mpsc::Receiver;
-use std::time::Duration;
 
 use log::{debug, info};
 use postcard::to_allocvec_cobs;
@@ -47,26 +46,48 @@ impl MotorMonitor {
                 3 => self.torque = Some(sensor_average),
                 _ => panic!("Invalid MotorGroupSensorsBuffers index"),
             };
-            if let Some(air_temperature) = &self.air_temperature && let Some(process_temperature) = &self.process_temperature
-                && let Some(rotational_speed) = &self.rotational_speed && let Some(torque) = &self.torque
-            {
-                let avg_number_of_values = (air_temperature.number_of_values + process_temperature.number_of_values + rotational_speed.number_of_values + torque.number_of_values) /4;
-                if let Some(failure) = utils::averages_indicate_failure(air_temperature.average, process_temperature.average, rotational_speed.average, torque.average, avg_number_of_values) {
-                    info!("Found rule violation {failure} in motor {}", motor_id);
-                    let alert = Alert {
-                        time: [air_temperature.timestamp, process_temperature.timestamp, rotational_speed.timestamp, torque.timestamp].into_iter().reduce(f64::max).unwrap(),
-                        motor_id: motor_id as u16,
-                        failure,
-                    };
-                    let vec: Vec<u8> =
-                        to_allocvec_cobs(&alert).expect("Could not write motor monitor alert to Vec<u8>");
-                    self.cloud_server
-                        .write_all(&vec)
-                        .expect("Could not send motor alert to cloud server");
-                    self.process_temperature = None;
-                    self.air_temperature = None;
-                    self.rotational_speed = None;
-                    self.torque = None;
+            if let Some(air_temperature) = &self.air_temperature {
+                if let Some(process_temperature) = &self.process_temperature {
+                    if let Some(rotational_speed) = &self.rotational_speed {
+                        if let Some(torque) = &self.torque {
+                            let avg_number_of_values = (air_temperature.number_of_values
+                                + process_temperature.number_of_values
+                                + rotational_speed.number_of_values
+                                + torque.number_of_values)
+                                / 4;
+                            if let Some(failure) = utils::averages_indicate_failure(
+                                air_temperature.average,
+                                process_temperature.average,
+                                rotational_speed.average,
+                                torque.average,
+                                avg_number_of_values,
+                            ) {
+                                info!("Found rule violation {failure} in motor {}", motor_id);
+                                let alert = Alert {
+                                    time: [
+                                        air_temperature.timestamp,
+                                        process_temperature.timestamp,
+                                        rotational_speed.timestamp,
+                                        torque.timestamp,
+                                    ]
+                                    .into_iter()
+                                    .reduce(f64::max)
+                                    .unwrap(),
+                                    motor_id: motor_id as u16,
+                                    failure,
+                                };
+                                let vec: Vec<u8> = to_allocvec_cobs(&alert)
+                                    .expect("Could not write motor monitor alert to Vec<u8>");
+                                self.cloud_server
+                                    .write_all(&vec)
+                                    .expect("Could not send motor alert to cloud server");
+                                self.process_temperature = None;
+                                self.air_temperature = None;
+                                self.rotational_speed = None;
+                                self.torque = None;
+                            }
+                        }
+                    }
                 }
             }
         }
