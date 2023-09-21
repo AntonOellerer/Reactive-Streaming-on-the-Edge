@@ -8,8 +8,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use plotters::prelude::{
-    Boxplot, ChartBuilder, IntoDrawingArea, IntoLogRange, Quartiles, SVGBackend, BLACK, BLUE,
-    GREEN, RED, WHITE,
+    Boxplot, ChartBuilder, Circle, IntoDrawingArea, IntoLogRange, Quartiles, SVGBackend, BLACK,
+    BLUE, GREEN, RED, WHITE,
 };
 use polars::datatypes::DataType;
 use polars::export::ahash::{HashMap, HashMapExt};
@@ -133,10 +133,18 @@ fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFr
                     let oo_series = extract_data(oo_frame.unwrap());
                     let p_value = t_test(&rx_series, &oo_series); //rx > oo
                     if p_value > SIGNIFICANCE_LEVEL {
-                        println!(
-                            "{data_name} {} {} {key} {p_value}",
-                            row.independent_variable, diagram.independent_variable
-                        )
+                        let p_value_c = t_test(&oo_series, &rx_series); // oo > rx
+                        if p_value_c > SIGNIFICANCE_LEVEL {
+                            println!(
+                                "Equal performance: {data_name} {} {} {key} {p_value}",
+                                row.independent_variable, diagram.independent_variable
+                            )
+                        } else {
+                            println!(
+                                "Declarative better performance: {data_name} {} {} {key} {p_value}",
+                                row.independent_variable, diagram.independent_variable
+                            )
+                        }
                     }
                 });
             aggregates_row.results.push(aggregate_diagram);
@@ -148,7 +156,7 @@ fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFr
 
 fn t_test(series1: &Series, series2: &Series) -> f64 {
     let min_length = std::cmp::min(series1.len(), series2.len());
-    if min_length == 0 {
+    if min_length < 2 {
         return 0f64;
     }
     let difference = series1.head(Some(min_length)) - series2.head(Some(min_length));
@@ -161,6 +169,7 @@ fn t_test(series1: &Series, series2: &Series) -> f64 {
         },
     };
     let sample_size = difference.len() as f64;
+    // println!("diff_mean: {diff_mean}, diff_std: {diff_std}, sample_size: {sample_size}");
     let t = diff_mean / (diff_std / sample_size.sqrt());
     let degrees_of_freedom = if sample_size <= 1f64 {
         1f64
@@ -168,6 +177,7 @@ fn t_test(series1: &Series, series2: &Series) -> f64 {
         sample_size - 1f64
     };
     let t_dist = StudentsT::new(0.0, 1.0, degrees_of_freedom).unwrap();
+    // println!("t: {t} dof: {degrees_of_freedom}");
     1_f64 - t_dist.cdf(t)
 }
 
@@ -203,14 +213,23 @@ fn save_as_csv(
 
 fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes) {
     let mut aggregates: ResultMatrix<Quartiles> = vec![];
+    let mut lengths: ResultMatrix<usize> = vec![];
     let result_matrix = get_series(axis_indices, file_name_marker);
     for row in result_matrix {
         let mut aggregates_row = ResultRow {
             independent_variable: row.independent_variable,
             results: vec![],
         };
+        let mut lengths_row = ResultRow {
+            independent_variable: row.independent_variable,
+            results: vec![],
+        };
         for diagram in row.results {
             let mut aggregate_diagram = ResultDiagram {
+                independent_variable: diagram.independent_variable,
+                frames: vec![],
+            };
+            let mut length_diagram = ResultDiagram {
                 independent_variable: diagram.independent_variable,
                 frames: vec![],
             };
@@ -230,6 +249,12 @@ fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes
                     data: quartiles,
                 };
                 aggregate_diagram.frames.push(aggregate_frame);
+                let length_frame = ResultFrame {
+                    independent_variable: frame.independent_variable,
+                    processing_model: frame.processing_model,
+                    data: frame.data.len(),
+                };
+                length_diagram.frames.push(length_frame);
             }
             diagram
                 .frames
@@ -247,19 +272,30 @@ fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes
                 })
                 .iter()
                 .for_each(|(key, (rx_series, oo_series))| {
-                    let p_value = t_test(rx_series.unwrap(), oo_series.unwrap()); //rx > oo
+                    let p_value = t_test(rx_series.unwrap(), oo_series.unwrap()); // rx > oo
                     if p_value > SIGNIFICANCE_LEVEL {
-                        println!(
-                            "{data_name} {} {} {key} {p_value}",
-                            row.independent_variable, diagram.independent_variable
-                        )
+                        let p_value_c = t_test(oo_series.unwrap(), rx_series.unwrap()); // oo > rx
+                        if p_value_c > SIGNIFICANCE_LEVEL {
+                            println!(
+                                "Equal performance: {data_name} {} {} {key} {p_value}",
+                                row.independent_variable, diagram.independent_variable
+                            )
+                        } else {
+                            println!(
+                                "Declarative better performance: {data_name} {} {} {key} {p_value}",
+                                row.independent_variable, diagram.independent_variable
+                            )
+                        }
                     }
                 });
             aggregates_row.results.push(aggregate_diagram);
+            lengths_row.results.push(length_diagram);
         }
         aggregates.push(aggregates_row);
+        lengths.push(lengths_row);
     }
     plot_aggregate_data(data_name, aggregates);
+    plot_simple_data("number of alerts", lengths);
 }
 
 fn get_axis_variables(axes: &Axes, file_name: &str) -> Axes {
@@ -484,8 +520,54 @@ fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<Quartiles
         }
     }
 }
-
-fn get_independent_range(diagram: &ResultDiagram<Quartiles>) -> Range<i32> {
+fn plot_simple_data(data_name: &str, aggregate_matrix: ResultMatrix<usize>) {
+    let rows = aggregate_matrix.len();
+    let columns = aggregate_matrix.first().unwrap().results.len();
+    let file_name = format!("figures/{data_name}.svg");
+    let root_drawing_area =
+        SVGBackend::new(&file_name, ((columns * 512) as u32, (rows * 512) as u32))
+            .into_drawing_area();
+    root_drawing_area.fill(&WHITE).unwrap();
+    root_drawing_area
+        .titled(data_name, ("sans-serif", 40))
+        .unwrap();
+    let panels = root_drawing_area.split_evenly((rows, columns));
+    for (y_index, row) in aggregate_matrix.iter().enumerate() {
+        for (x_index, diagram) in row.results.iter().enumerate() {
+            let mut chart = ChartBuilder::on(&panels[y_index * columns + x_index])
+                .margin(25)
+                .set_left_and_bottom_label_area_size(20)
+                .build_cartesian_2d(
+                    get_independent_range(diagram).log_scale(),
+                    0f32..diagram.frames.iter().map(|d| d.data).max().unwrap_or(0) as f32,
+                )
+                .unwrap();
+            chart
+                .configure_mesh()
+                .x_desc(X_LABEL)
+                .y_desc(data_name)
+                .draw()
+                .unwrap();
+            for frame in diagram.frames.iter() {
+                let style = match frame.processing_model {
+                    RequestProcessingModel::ReactiveStreaming => RED,
+                    RequestProcessingModel::ClientServer => BLUE,
+                    RequestProcessingModel::SpringQL => GREEN,
+                    RequestProcessingModel::ObjectOriented => BLACK,
+                };
+                chart
+                    .plotting_area()
+                    .draw(&Circle::new(
+                        (frame.independent_variable as i32, frame.data as f32),
+                        2,
+                        style,
+                    ))
+                    .unwrap();
+            }
+        }
+    }
+}
+fn get_independent_range<T>(diagram: &ResultDiagram<T>) -> Range<i32> {
     let independent_values = diagram
         .frames
         .iter()
