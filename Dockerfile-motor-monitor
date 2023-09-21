@@ -2,8 +2,8 @@ FROM --platform=$TARGETPLATFORM fedora:latest
 
 COPY motor_driver/resources/config-production.toml /etc/config-production.toml
 COPY target/aarch64-unknown-linux-gnu/release/motor_driver /usr/local/bin/motor_driver
-COPY target/aarch64-unknown-linux-gnu/release/motor_driver /usr/local/bin/motor_monitor_rx
-COPY target/aarch64-unknown-linux-gnu/release/motor_driver /usr/local/bin/motor_monitor_oo
+COPY target/aarch64-unknown-linux-gnu/release/motor_monitor_rx /usr/local/bin/motor_monitor_rx
+COPY target/aarch64-unknown-linux-gnu/release/motor_monitor_oo /usr/local/bin/motor_monitor_oo
 
 ENV RUST_LOG="info"
 CMD ["motor_driver"]
