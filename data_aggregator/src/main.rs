@@ -21,7 +21,6 @@ use statrs::distribution::{ContinuousCDF, StudentsT};
 
 use data_transfer_objects::RequestProcessingModel;
 
-const RAW_DATA_PATH: &str = "../bench_executor/";
 const X_LABEL: &str = "Window Size";
 
 const SIGNIFICANCE_LEVEL: f64 = 0.05;
@@ -55,18 +54,21 @@ struct Axes {
 }
 
 fn main() {
-    let axis_indices = get_axes_indices(&mut std::env::args());
-    aggregate_data("processing_time", &axis_indices, |data_frame| {
-        &(&(&data_frame["utime"] + &data_frame["stime"]) + &data_frame["cutime"])
-            + &data_frame["cstime"]
-    });
-    aggregate_data("memory_usage", &axis_indices, |data_frame| {
-        data_frame["vmhwm"].clone()
-    });
-    aggregate_data("load_average", &axis_indices, |data_frame| {
-        data_frame["load_average"].clone()
-    });
-    aggregate_series("ad", "alert_delays", &axis_indices);
+    for data_path in ["local_data", "dsg_data"] {
+        println!("{data_path}");
+        let axis_indices = get_axes_indices(&mut std::env::args());
+        aggregate_data(data_path, "processing_time", &axis_indices, |data_frame| {
+            &(&(&data_frame["utime"] + &data_frame["stime"]) + &data_frame["cutime"])
+                + &data_frame["cstime"]
+        });
+        aggregate_data(data_path, "memory_usage", &axis_indices, |data_frame| {
+            data_frame["vmhwm"].clone()
+        });
+        aggregate_data(data_path, "load_average", &axis_indices, |data_frame| {
+            data_frame["load_average"].clone()
+        });
+        aggregate_series(data_path, "ad", "alert_delays", &axis_indices);
+    }
 }
 
 fn get_axes_indices(args: &mut Args) -> Axes {
@@ -75,14 +77,19 @@ fn get_axes_indices(args: &mut Args) -> Axes {
             .nth(1)
             .map(|token| token.parse::<usize>().unwrap())
             .unwrap(),
-        x_outer: args.next().and_then(|token| token.parse::<usize>().ok()),
         y_outer: args.next().and_then(|token| token.parse::<usize>().ok()),
+        x_outer: args.next().and_then(|token| token.parse::<usize>().ok()),
     }
 }
 
-fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFrame) -> Series) {
+fn aggregate_data(
+    data_path: &str,
+    data_name: &str,
+    axis_indices: &Axes,
+    extract_data: fn(&DataFrame) -> Series,
+) {
     let mut aggregates: ResultMatrix<Quartiles> = vec![];
-    let result_matrix = get_data_frames(axis_indices, "ru");
+    let result_matrix = get_data_frames(data_path, axis_indices, "ru");
     for row in result_matrix {
         let mut aggregates_row = ResultRow {
             independent_variable: row.independent_variable,
@@ -151,7 +158,7 @@ fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFr
         }
         aggregates.push(aggregates_row);
     }
-    plot_aggregate_data(data_name, aggregates);
+    plot_aggregate_data(data_path, data_name, aggregates);
 }
 
 fn t_test(series1: &Series, series2: &Series) -> f64 {
@@ -211,10 +218,10 @@ fn save_as_csv(
     .unwrap();
 }
 
-fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes) {
+fn aggregate_series(data_path: &str, file_name_marker: &str, data_name: &str, axis_indices: &Axes) {
     let mut aggregates: ResultMatrix<Quartiles> = vec![];
     let mut lengths: ResultMatrix<usize> = vec![];
-    let result_matrix = get_series(axis_indices, file_name_marker);
+    let result_matrix = get_series(data_path, axis_indices, file_name_marker);
     for row in result_matrix {
         let mut aggregates_row = ResultRow {
             independent_variable: row.independent_variable,
@@ -294,8 +301,8 @@ fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes
         aggregates.push(aggregates_row);
         lengths.push(lengths_row);
     }
-    plot_aggregate_data(data_name, aggregates);
-    plot_simple_data("number of alerts", lengths);
+    plot_aggregate_data(data_path, data_name, aggregates);
+    plot_simple_data(data_path, "number_of_alerts", lengths);
 }
 
 fn get_axis_variables(axes: &Axes, file_name: &str) -> Axes {
@@ -340,7 +347,11 @@ fn get_aggregates(series: &Series) -> Quartiles {
     }
 }
 
-fn get_data_frames(axis_indices: &Axes, file_name_marker: &str) -> ResultMatrix<DataFrame> {
+fn get_data_frames(
+    data_path: &str,
+    axis_indices: &Axes,
+    file_name_marker: &str,
+) -> ResultMatrix<DataFrame> {
     let mut schema = Schema::new();
     schema.with_column("id".parse().unwrap(), DataType::Int64);
     schema.with_column("utime".parse().unwrap(), DataType::Int64);
@@ -353,7 +364,7 @@ fn get_data_frames(axis_indices: &Axes, file_name_marker: &str) -> ResultMatrix<
 
     let schema = Arc::new(schema);
 
-    let result_set = get_relevant_files(file_name_marker)
+    let result_set = get_relevant_files(data_path, file_name_marker)
         .iter()
         .map(|dir_entry| {
             let schema = Arc::clone(&schema);
@@ -379,9 +390,9 @@ fn get_data_frames(axis_indices: &Axes, file_name_marker: &str) -> ResultMatrix<
     data_to_matrix(result_set)
 }
 
-fn get_relevant_files(file_name_marker: &str) -> Vec<DirEntry> {
-    read_dir(RAW_DATA_PATH)
-        .expect("Raw data directory should exist and be readable")
+fn get_relevant_files(data_path: &str, file_name_marker: &str) -> Vec<DirEntry> {
+    read_dir(format!("data/{data_path}"))
+        .expect("data directory should exist and be readable")
         .filter_map(|dir_entry| dir_entry.ok())
         .filter_map(|dir_entry| {
             if let Ok(file_name) = dir_entry.file_name().into_string() {
@@ -445,8 +456,12 @@ fn data_to_matrix<T>(mut result_set: Vec<(Axes, RequestProcessingModel, T)>) -> 
     result_matrix
 }
 
-fn get_series(axis_indices: &Axes, file_name_marker: &str) -> ResultMatrix<Series> {
-    let result_set = get_relevant_files(file_name_marker)
+fn get_series(
+    data_path: &str,
+    axis_indices: &Axes,
+    file_name_marker: &str,
+) -> ResultMatrix<Series> {
+    let result_set = get_relevant_files(data_path, file_name_marker)
         .iter()
         .map(|dir_entry| {
             let file_name = dir_entry
@@ -474,10 +489,14 @@ fn read_csv_to_series(dir_entry: &DirEntry) -> Series {
     series
 }
 
-fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<Quartiles>) {
+fn plot_aggregate_data(
+    data_path: &str,
+    data_name: &str,
+    aggregate_matrix: ResultMatrix<Quartiles>,
+) {
     let rows = aggregate_matrix.len();
     let columns = aggregate_matrix.first().unwrap().results.len();
-    let file_name = format!("figures/{data_name}.svg");
+    let file_name = format!("figures/{data_path}/{data_name}.svg");
     let root_drawing_area =
         SVGBackend::new(&file_name, ((columns * 512) as u32, (rows * 512) as u32))
             .into_drawing_area();
@@ -520,10 +539,10 @@ fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<Quartiles
         }
     }
 }
-fn plot_simple_data(data_name: &str, aggregate_matrix: ResultMatrix<usize>) {
+fn plot_simple_data(data_path: &str, data_name: &str, aggregate_matrix: ResultMatrix<usize>) {
     let rows = aggregate_matrix.len();
     let columns = aggregate_matrix.first().unwrap().results.len();
-    let file_name = format!("figures/{data_name}.svg");
+    let file_name = format!("figures/{data_path}/{data_name}.svg");
     let root_drawing_area =
         SVGBackend::new(&file_name, ((columns * 512) as u32, (rows * 512) as u32))
             .into_drawing_area();
