@@ -1,3 +1,17 @@
+use data_transfer_objects::RequestProcessingModel;
+use plotters::prelude::{
+    Boxplot, ChartBuilder, Circle, IntoDrawingArea, IntoLogRange, PathElement, Quartiles,
+    SVGBackend, BLACK, BLUE, GREEN, RED, WHITE,
+};
+use plotters::series::LineSeries;
+use plotters::style::TRANSPARENT;
+use polars::datatypes::DataType;
+use polars::export::ahash::{HashMap, HashMapExt};
+use polars::frame::DataFrame;
+use polars::prelude::Series;
+use polars::prelude::{ChunkVar, SerReader};
+use polars::prelude::{CsvReader, Schema};
+use statrs::distribution::{ContinuousCDF, StudentsT};
 use std::cmp::Ordering;
 use std::env::Args;
 use std::fs;
@@ -7,21 +21,7 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use plotters::prelude::{
-    Boxplot, ChartBuilder, Circle, IntoDrawingArea, IntoLogRange, Quartiles, SVGBackend, BLACK,
-    BLUE, GREEN, RED, WHITE,
-};
-use polars::datatypes::DataType;
-use polars::export::ahash::{HashMap, HashMapExt};
-use polars::frame::DataFrame;
-use polars::prelude::Series;
-use polars::prelude::{ChunkVar, SerReader};
-use polars::prelude::{CsvReader, Schema};
-use statrs::distribution::{ContinuousCDF, StudentsT};
-
-use data_transfer_objects::RequestProcessingModel;
-
-const X_LABEL: &str = "Window Size";
+const X_LABEL: &str = "Window Size (in ms)";
 
 const SIGNIFICANCE_LEVEL: f64 = 0.05;
 
@@ -46,29 +46,32 @@ struct ResultRow<T> {
 
 type ResultMatrix<T> = Vec<ResultRow<T>>;
 
+#[derive(PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug)]
+enum System {
+    Local,
+    Dsg,
+}
+
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 struct Axes {
     x_inner: usize,
-    x_outer: Option<usize>,
-    y_outer: Option<usize>,
+    x_outer: System,
+    y_outer: usize,
 }
 
 fn main() {
-    for data_path in ["local_data", "dsg_data"] {
-        println!("{data_path}");
-        let axis_indices = get_axes_indices(&mut std::env::args());
-        aggregate_data(data_path, "processing_time", &axis_indices, |data_frame| {
-            &(&(&data_frame["utime"] + &data_frame["stime"]) + &data_frame["cutime"])
-                + &data_frame["cstime"]
-        });
-        aggregate_data(data_path, "memory_usage", &axis_indices, |data_frame| {
-            data_frame["vmhwm"].clone()
-        });
-        aggregate_data(data_path, "load_average", &axis_indices, |data_frame| {
-            data_frame["load_average"].clone()
-        });
-        aggregate_series(data_path, "ad", "alert_delays", &axis_indices);
-    }
+    let axis_indices = get_axes_indices(&mut std::env::args());
+    aggregate_data("processing_time", &axis_indices, |data_frame| {
+        &(&(&data_frame["utime"] + &data_frame["stime"]) + &data_frame["cutime"])
+            + &data_frame["cstime"]
+    });
+    aggregate_data("memory_usage", &axis_indices, |data_frame| {
+        data_frame["vmhwm"].clone()
+    });
+    aggregate_data("load_average", &axis_indices, |data_frame| {
+        data_frame["load_average"].clone()
+    });
+    aggregate_series("ad", "alert_delays", &axis_indices);
 }
 
 fn get_axes_indices(args: &mut Args) -> Axes {
@@ -77,19 +80,17 @@ fn get_axes_indices(args: &mut Args) -> Axes {
             .nth(1)
             .map(|token| token.parse::<usize>().unwrap())
             .unwrap(),
-        y_outer: args.next().and_then(|token| token.parse::<usize>().ok()),
-        x_outer: args.next().and_then(|token| token.parse::<usize>().ok()),
+        y_outer: args
+            .next()
+            .map(|token| token.parse::<usize>().unwrap())
+            .unwrap(),
+        x_outer: System::Local,
     }
 }
 
-fn aggregate_data(
-    data_path: &str,
-    data_name: &str,
-    axis_indices: &Axes,
-    extract_data: fn(&DataFrame) -> Series,
-) {
+fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFrame) -> Series) {
     let mut aggregates: ResultMatrix<Quartiles> = vec![];
-    let result_matrix = get_data_frames(data_path, axis_indices, "ru");
+    let result_matrix = get_data_frames(axis_indices, "ru");
     for row in result_matrix {
         let mut aggregates_row = ResultRow {
             independent_variable: row.independent_variable,
@@ -158,7 +159,7 @@ fn aggregate_data(
         }
         aggregates.push(aggregates_row);
     }
-    plot_aggregate_data(data_path, data_name, aggregates);
+    plot_aggregate_data(data_name, aggregates);
 }
 
 fn t_test(series1: &Series, series2: &Series) -> f64 {
@@ -218,10 +219,10 @@ fn save_as_csv(
     .unwrap();
 }
 
-fn aggregate_series(data_path: &str, file_name_marker: &str, data_name: &str, axis_indices: &Axes) {
+fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes) {
     let mut aggregates: ResultMatrix<Quartiles> = vec![];
     let mut lengths: ResultMatrix<usize> = vec![];
-    let result_matrix = get_series(data_path, axis_indices, file_name_marker);
+    let result_matrix = get_series(axis_indices, file_name_marker);
     for row in result_matrix {
         let mut aggregates_row = ResultRow {
             independent_variable: row.independent_variable,
@@ -301,16 +302,16 @@ fn aggregate_series(data_path: &str, file_name_marker: &str, data_name: &str, ax
         aggregates.push(aggregates_row);
         lengths.push(lengths_row);
     }
-    plot_aggregate_data(data_path, data_name, aggregates);
-    plot_simple_data(data_path, "number_of_alerts", lengths);
+    plot_aggregate_data(data_name, aggregates);
+    plot_simple_data("number_of_alerts", lengths);
 }
 
-fn get_axis_variables(axes: &Axes, file_name: &str) -> Axes {
+fn get_axis_variables(axes: &Axes, file_name: &str, system: System) -> Axes {
     let independent_variables = get_independent_variables(file_name);
     Axes {
         x_inner: independent_variables[axes.x_inner],
-        x_outer: axes.x_outer.map(|idx| independent_variables[idx]),
-        y_outer: axes.y_outer.map(|idx| independent_variables[idx]),
+        x_outer: system,
+        y_outer: independent_variables[axes.y_outer],
     }
 }
 
@@ -347,11 +348,7 @@ fn get_aggregates(series: &Series) -> Quartiles {
     }
 }
 
-fn get_data_frames(
-    data_path: &str,
-    axis_indices: &Axes,
-    file_name_marker: &str,
-) -> ResultMatrix<DataFrame> {
+fn get_data_frames(axis_indices: &Axes, file_name_marker: &str) -> ResultMatrix<DataFrame> {
     let mut schema = Schema::new();
     schema.with_column("id".parse().unwrap(), DataType::Int64);
     schema.with_column("utime".parse().unwrap(), DataType::Int64);
@@ -364,7 +361,7 @@ fn get_data_frames(
 
     let schema = Arc::new(schema);
 
-    let result_set = get_relevant_files(data_path, file_name_marker)
+    let result_set = get_relevant_files(file_name_marker)
         .iter()
         .map(|dir_entry| {
             let schema = Arc::clone(&schema);
@@ -372,8 +369,13 @@ fn get_data_frames(
                 .file_name()
                 .into_string()
                 .expect("Result file should have UTF-8 name");
+            let system = if dir_entry.path().parent().unwrap().ends_with("dsg_data") {
+                System::Dsg
+            } else {
+                System::Local
+            };
             (
-                get_axis_variables(axis_indices, &file_name),
+                get_axis_variables(axis_indices, &file_name, system),
                 get_request_processing_model(&file_name),
                 CsvReader::from_path(dir_entry.path())
                     .map(move |csv_reader| {
@@ -390,9 +392,10 @@ fn get_data_frames(
     data_to_matrix(result_set)
 }
 
-fn get_relevant_files(data_path: &str, file_name_marker: &str) -> Vec<DirEntry> {
-    read_dir(format!("data/{data_path}"))
-        .expect("data directory should exist and be readable")
+fn get_relevant_files(file_name_marker: &str) -> Vec<DirEntry> {
+    read_dir("data/dsg_data")
+        .unwrap()
+        .chain(read_dir("data/local_data").unwrap())
         .filter_map(|dir_entry| dir_entry.ok())
         .filter_map(|dir_entry| {
             if let Ok(file_name) = dir_entry.file_name().into_string() {
@@ -425,22 +428,19 @@ fn data_to_matrix<T>(mut result_set: Vec<(Axes, RequestProcessingModel, T)>) -> 
             processing_model: request_processing_model,
             data: data_frame,
         };
-        if result_matrix.is_empty()
-            || (axes.y_outer.is_some() && axes.y_outer.cmp(&last_axes.y_outer) != Ordering::Equal)
-        {
+        if result_matrix.is_empty() || (axes.y_outer.cmp(&last_axes.y_outer) != Ordering::Equal) {
             let diagram = ResultDiagram {
-                independent_variable: axes.x_outer.unwrap_or(0),
+                independent_variable: if axes.x_outer == System::Dsg { 1 } else { 0 },
                 frames: vec![frame],
             };
             let new_row = ResultRow {
-                independent_variable: axes.y_outer.unwrap_or(0),
+                independent_variable: axes.y_outer,
                 results: vec![diagram],
             };
             result_matrix.push(new_row);
-        } else if axes.x_outer.is_some() && axes.x_outer.cmp(&last_axes.x_outer) != Ordering::Equal
-        {
+        } else if axes.x_outer != last_axes.x_outer {
             let diagram = ResultDiagram {
-                independent_variable: axes.x_outer.unwrap_or(0),
+                independent_variable: if axes.x_outer == System::Dsg { 1 } else { 0 },
                 frames: vec![frame],
             };
             let test = result_matrix.iter_mut().last().unwrap();
@@ -456,20 +456,21 @@ fn data_to_matrix<T>(mut result_set: Vec<(Axes, RequestProcessingModel, T)>) -> 
     result_matrix
 }
 
-fn get_series(
-    data_path: &str,
-    axis_indices: &Axes,
-    file_name_marker: &str,
-) -> ResultMatrix<Series> {
-    let result_set = get_relevant_files(data_path, file_name_marker)
+fn get_series(axis_indices: &Axes, file_name_marker: &str) -> ResultMatrix<Series> {
+    let result_set = get_relevant_files(file_name_marker)
         .iter()
         .map(|dir_entry| {
             let file_name = dir_entry
                 .file_name()
                 .into_string()
                 .expect("Result file should have UTF-8 name");
+            let system = if dir_entry.path().parent().unwrap().ends_with("dsg_data") {
+                System::Dsg
+            } else {
+                System::Local
+            };
             (
-                get_axis_variables(axis_indices, &file_name),
+                get_axis_variables(axis_indices, &file_name, system),
                 get_request_processing_model(&file_name),
                 read_csv_to_series(dir_entry),
             )
@@ -489,36 +490,70 @@ fn read_csv_to_series(dir_entry: &DirEntry) -> Series {
     series
 }
 
-fn plot_aggregate_data(
-    data_path: &str,
-    data_name: &str,
-    aggregate_matrix: ResultMatrix<Quartiles>,
-) {
+fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<Quartiles>) {
     let rows = aggregate_matrix.len();
     let columns = aggregate_matrix.first().unwrap().results.len();
-    let file_name = format!("figures/{data_path}/{data_name}.svg");
+    let file_name = format!("figures/{data_name}.svg");
     let root_drawing_area =
         SVGBackend::new(&file_name, ((columns * 512) as u32, (rows * 512) as u32))
             .into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
     root_drawing_area
-        .titled(data_name, ("sans-serif", 40))
+        .titled(&get_title(data_name), ("sans-serif", 40))
+        .unwrap();
+    let mut cc = ChartBuilder::on(&root_drawing_area)
+        .build_cartesian_2d(0..25, 0..25)
+        .unwrap();
+    cc.draw_series(LineSeries::new([], WHITE))
+        .unwrap()
+        .label("Declarative")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED));
+    cc.draw_series(LineSeries::new([], WHITE))
+        .unwrap()
+        .label("Imperative")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BLACK));
+    cc.configure_series_labels()
+        .border_style(TRANSPARENT)
+        .margin(45)
+        .position(plotters::prelude::SeriesLabelPosition::UpperMiddle)
+        .label_font(("sans-serif", 20))
+        .draw()
         .unwrap();
     let panels = root_drawing_area.split_evenly((rows, columns));
     for (y_index, row) in aggregate_matrix.iter().enumerate() {
         for (x_index, diagram) in row.results.iter().enumerate() {
+            let dependent_range = get_dependent_range(diagram);
+            let range_diff = dependent_range.end - dependent_range.start;
             let mut chart = ChartBuilder::on(&panels[y_index * columns + x_index])
                 .margin(25)
-                .set_left_and_bottom_label_area_size(20)
-                .build_cartesian_2d(
-                    get_independent_range(diagram).log_scale(),
-                    get_dependent_range(diagram),
+                .margin_top(if y_index == 0 { 75 } else { 20 })
+                .x_label_area_size(35)
+                .y_label_area_size(std::cmp::max(35, 15 * dependent_range.end.log10() as i32))
+                .caption(
+                    format!(
+                        "Benchmark System {}, {} {}",
+                        if diagram.independent_variable == 0 {
+                            "A"
+                        } else {
+                            "B"
+                        },
+                        row.independent_variable,
+                        if row.independent_variable == 1 {
+                            "motor"
+                        } else {
+                            "motors"
+                        }
+                    ),
+                    ("sans-serif", 20),
                 )
+                .build_cartesian_2d(get_independent_range(diagram).log_scale(), dependent_range)
                 .unwrap();
-            chart
-                .configure_mesh()
-                .x_desc(X_LABEL)
-                .y_desc(data_name)
+            let mut mesh = chart.configure_mesh();
+            if range_diff >= 10f32 {
+                mesh.y_label_formatter(&|y| format!("{y:.0}"));
+            }
+            mesh.x_desc(X_LABEL)
+                .y_desc(get_y_desc(data_name))
                 .draw()
                 .unwrap();
             for frame in diagram.frames.iter() {
@@ -539,16 +574,37 @@ fn plot_aggregate_data(
         }
     }
 }
-fn plot_simple_data(data_path: &str, data_name: &str, aggregate_matrix: ResultMatrix<usize>) {
+
+fn get_y_desc(data_name: &str) -> String {
+    match data_name {
+        "alert_delays" => "Alert Delays (ms)".to_owned(),
+        "load_average" => "Load Average (tasks per minute)".to_owned(),
+        "memory_usage" => "Memory Usage (bytes)".to_owned(),
+        "processing_time" => "Processing Time (ms)".to_owned(),
+        _ => data_name.to_owned(),
+    }
+}
+
+fn get_title(data_name: &str) -> String {
+    match data_name {
+        "alert_delays" => "Alert Delays".to_owned(),
+        "load_average" => "Load Average".to_owned(),
+        "memory_usage" => "Memory Usage".to_owned(),
+        "processing_time" => "Processing Time".to_owned(),
+        _ => data_name.to_owned(),
+    }
+}
+
+fn plot_simple_data(data_name: &str, aggregate_matrix: ResultMatrix<usize>) {
     let rows = aggregate_matrix.len();
     let columns = aggregate_matrix.first().unwrap().results.len();
-    let file_name = format!("figures/{data_path}/{data_name}.svg");
+    let file_name = format!("figures/{data_name}.svg");
     let root_drawing_area =
         SVGBackend::new(&file_name, ((columns * 512) as u32, (rows * 512) as u32))
             .into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
     root_drawing_area
-        .titled(data_name, ("sans-serif", 40))
+        .titled(&get_title(data_name), ("sans-serif", 40))
         .unwrap();
     let panels = root_drawing_area.split_evenly((rows, columns));
     for (y_index, row) in aggregate_matrix.iter().enumerate() {
@@ -564,7 +620,7 @@ fn plot_simple_data(data_path: &str, data_name: &str, aggregate_matrix: ResultMa
             chart
                 .configure_mesh()
                 .x_desc(X_LABEL)
-                .y_desc(data_name)
+                .y_desc(get_y_desc(data_name))
                 .draw()
                 .unwrap();
             for frame in diagram.frames.iter() {
