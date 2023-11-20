@@ -491,61 +491,20 @@ fn read_csv_to_series(dir_entry: &DirEntry) -> Series {
 }
 
 fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<Quartiles>) {
-    let rows = aggregate_matrix.len();
-    let columns = aggregate_matrix.first().unwrap().results.len();
-    let file_name = format!("figures/{data_name}.svg");
-    let root_drawing_area =
-        SVGBackend::new(&file_name, ((columns * 512) as u32, (rows * 512) as u32))
-            .into_drawing_area();
-    root_drawing_area.fill(&WHITE).unwrap();
-    root_drawing_area
-        .titled(&get_title(data_name), ("sans-serif", 40))
-        .unwrap();
-    let mut cc = ChartBuilder::on(&root_drawing_area)
-        .build_cartesian_2d(0..25, 0..25)
-        .unwrap();
-    cc.draw_series(LineSeries::new([], WHITE))
-        .unwrap()
-        .label("Declarative")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED));
-    cc.draw_series(LineSeries::new([], WHITE))
-        .unwrap()
-        .label("Imperative")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BLACK));
-    cc.configure_series_labels()
-        .border_style(TRANSPARENT)
-        .margin(45)
-        .position(plotters::prelude::SeriesLabelPosition::UpperMiddle)
-        .label_font(("sans-serif", 20))
-        .draw()
-        .unwrap();
-    let panels = root_drawing_area.split_evenly((rows, columns));
     for (y_index, row) in aggregate_matrix.iter().enumerate() {
         for (x_index, diagram) in row.results.iter().enumerate() {
+            let file_name = format!(
+                "figures/{data_name}/{}_{}.svg",
+                row.independent_variable, diagram.independent_variable
+            );
+            let root_drawing_area = SVGBackend::new(&file_name, (512, 512)).into_drawing_area();
+            root_drawing_area.fill(&WHITE).unwrap();
             let dependent_range = get_dependent_range(diagram);
             let range_diff = dependent_range.end - dependent_range.start;
-            let mut chart = ChartBuilder::on(&panels[y_index * columns + x_index])
+            let mut chart = ChartBuilder::on(&root_drawing_area)
                 .margin(25)
-                .margin_top(if y_index == 0 { 75 } else { 20 })
                 .x_label_area_size(35)
                 .y_label_area_size(std::cmp::max(35, 15 * dependent_range.end.log10() as i32))
-                .caption(
-                    format!(
-                        "Benchmark System {}, {} {}",
-                        if diagram.independent_variable == 0 {
-                            "A"
-                        } else {
-                            "B"
-                        },
-                        row.independent_variable,
-                        if row.independent_variable == 1 {
-                            "motor"
-                        } else {
-                            "motors"
-                        }
-                    ),
-                    ("sans-serif", 20),
-                )
                 .build_cartesian_2d(get_independent_range(diagram).log_scale(), dependent_range)
                 .unwrap();
             let mut mesh = chart.configure_mesh();
