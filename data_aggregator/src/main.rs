@@ -501,14 +501,19 @@ fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<Quartiles
             root_drawing_area.fill(&WHITE).unwrap();
             let dependent_range = get_dependent_range(diagram);
             let range_diff = dependent_range.end - dependent_range.start;
+            let positions = if range_diff > 2.0 {
+                std::cmp::max(35, 15 * dependent_range.end.log10() as i32)
+            } else {
+                65
+            };
             let mut chart = ChartBuilder::on(&root_drawing_area)
                 .margin(25)
                 .x_label_area_size(35)
-                .y_label_area_size(std::cmp::max(35, 15 * dependent_range.end.log10() as i32))
+                .y_label_area_size(positions)
                 .build_cartesian_2d(get_independent_range(diagram).log_scale(), dependent_range)
                 .unwrap();
             let mut mesh = chart.configure_mesh();
-            if range_diff >= 10f32 {
+            if range_diff >= 5.6f32 {
                 mesh.y_label_formatter(&|y| format!("{y:.0}"));
             }
             mesh.x_desc(X_LABEL)
@@ -536,10 +541,10 @@ fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<Quartiles
 
 fn get_y_desc(data_name: &str) -> String {
     match data_name {
-        "alert_delays" => "Alert Delays (ms)".to_owned(),
+        "alert_delays" => "Alert Delays (s)".to_owned(),
         "load_average" => "Load Average (tasks per minute)".to_owned(),
         "memory_usage" => "Memory Usage (bytes)".to_owned(),
-        "processing_time" => "Processing Time (ms)".to_owned(),
+        "processing_time" => "Processing Time (s/100)".to_owned(),
         _ => data_name.to_owned(),
     }
 }
@@ -573,7 +578,7 @@ fn plot_simple_data(data_name: &str, aggregate_matrix: ResultMatrix<usize>) {
                 .set_left_and_bottom_label_area_size(20)
                 .build_cartesian_2d(
                     get_independent_range(diagram).log_scale(),
-                    0f32..diagram.frames.iter().map(|d| d.data).max().unwrap_or(0) as f32,
+                    (0f32..diagram.frames.iter().map(|d| d.data).max().unwrap_or(0) as f32),
                 )
                 .unwrap();
             chart
