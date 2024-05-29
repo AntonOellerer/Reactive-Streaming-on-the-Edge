@@ -1,25 +1,25 @@
-use data_transfer_objects::RequestProcessingModel;
-use plotters::prelude::{
-    Boxplot, ChartBuilder, Circle, IntoDrawingArea, IntoLogRange, PathElement, Quartiles,
-    SVGBackend, BLACK, BLUE, GREEN, RED, WHITE,
-};
-use plotters::series::LineSeries;
-use plotters::style::TRANSPARENT;
-use polars::datatypes::DataType;
-use polars::export::ahash::{HashMap, HashMapExt};
-use polars::frame::DataFrame;
-use polars::prelude::Series;
-use polars::prelude::{ChunkVar, SerReader};
-use polars::prelude::{CsvReader, Schema};
-use statrs::distribution::{ContinuousCDF, StudentsT};
 use std::cmp::Ordering;
 use std::env::Args;
 use std::fs;
-use std::fs::{read_dir, DirEntry, OpenOptions};
+use std::fs::{DirEntry, OpenOptions, read_dir};
 use std::io::Write;
 use std::ops::Range;
 use std::str::FromStr;
 use std::sync::Arc;
+
+use plotters::prelude::{
+    BLACK, BLUE, Boxplot, ChartBuilder, Circle, GREEN,
+    IntoDrawingArea, IntoLogRange, Quartiles, RED, SVGBackend, WHITE,
+};
+use polars::datatypes::DataType;
+use polars::export::ahash::{HashMap, HashMapExt};
+use polars::frame::DataFrame;
+use polars::prelude::{ChunkVar, SerReader};
+use polars::prelude::{CsvReader, Schema};
+use polars::prelude::Series;
+use statrs::distribution::{ContinuousCDF, StudentsT};
+
+use data_transfer_objects::RequestProcessingModel;
 
 const X_LABEL: &str = "Window Size (in ms)";
 
@@ -62,8 +62,9 @@ struct Axes {
 fn main() {
     let axis_indices = get_axes_indices(&mut std::env::args());
     aggregate_data("processing_time", &axis_indices, |data_frame| {
-        &(&(&data_frame["utime"] + &data_frame["stime"]) + &data_frame["cutime"])
-            + &data_frame["cstime"]
+        (&(&(&data_frame["utime"] + &data_frame["stime"]) + &data_frame["cutime"])
+            + &data_frame["cstime"])
+            / 100.0
     });
     aggregate_data("memory_usage", &axis_indices, |data_frame| {
         data_frame["vmhwm"].clone()
@@ -90,6 +91,7 @@ fn get_axes_indices(args: &mut Args) -> Axes {
 
 fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFrame) -> Series) {
     let mut aggregates: ResultMatrix<Quartiles> = vec![];
+    let mut rel_perfs: Series = Series::new_empty("perfs", &DataType::Float64);
     let result_matrix = get_data_frames(axis_indices, "ru");
     for row in result_matrix {
         let mut aggregates_row = ResultRow {
@@ -139,6 +141,8 @@ fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFr
                 .for_each(|(key, (rx_frame, oo_frame))| {
                     let rx_series = extract_data(rx_frame.unwrap());
                     let oo_series = extract_data(oo_frame.unwrap());
+                    let perf_ser: Series = [get_rel_performance_diff(&oo_series, &rx_series)].into_iter().collect();
+                    rel_perfs.append(&perf_ser).unwrap();
                     let p_value = t_test(&rx_series, &oo_series); //rx > oo
                     if p_value > SIGNIFICANCE_LEVEL {
                         let p_value_c = t_test(&oo_series, &rx_series); // oo > rx
@@ -160,6 +164,17 @@ fn aggregate_data(data_name: &str, axis_indices: &Axes, extract_data: fn(&DataFr
         aggregates.push(aggregates_row);
     }
     plot_aggregate_data(data_name, aggregates);
+    println!("rel perf {}: mean {}, stdev {}", data_name, rel_perfs.mean().unwrap(), rel_perfs.f64().unwrap().std(1).unwrap())
+}
+
+fn get_rel_performance_diff(series1: &Series, series2: &Series) -> f64 {
+    if let Some(s1_mean) = series1.mean() {
+        if let Some(s2_mean) = series2.mean() {
+            return s1_mean / s2_mean;
+        }
+        return 1f64;
+    }
+    1f64
 }
 
 fn t_test(series1: &Series, series2: &Series) -> f64 {
@@ -210,18 +225,19 @@ fn save_as_csv(
             file,
             "independent_var, lower_fence, lower_quartile, median, upper_quartile, upper_fence"
         )
-        .unwrap();
+            .unwrap();
     }
     writeln!(
         file,
         "{x_inner}, {lower_fence}, {lower_quartile}, {median}, {upper_quartile}, {upper_fence}"
     )
-    .unwrap();
+        .unwrap();
 }
 
 fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes) {
     let mut aggregates: ResultMatrix<Quartiles> = vec![];
     let mut lengths: ResultMatrix<usize> = vec![];
+    let mut rel_perfs: Series = Series::new_empty("perfs", &DataType::Float64);
     let result_matrix = get_series(axis_indices, file_name_marker);
     for row in result_matrix {
         let mut aggregates_row = ResultRow {
@@ -280,6 +296,8 @@ fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes
                 })
                 .iter()
                 .for_each(|(key, (rx_series, oo_series))| {
+                    let perf_ser: Series = [get_rel_performance_diff(oo_series.unwrap(), rx_series.unwrap())].into_iter().collect();
+                    rel_perfs.append(&perf_ser).unwrap();
                     let p_value = t_test(rx_series.unwrap(), oo_series.unwrap()); // rx > oo
                     if p_value > SIGNIFICANCE_LEVEL {
                         let p_value_c = t_test(oo_series.unwrap(), rx_series.unwrap()); // oo > rx
@@ -304,6 +322,7 @@ fn aggregate_series(file_name_marker: &str, data_name: &str, axis_indices: &Axes
     }
     plot_aggregate_data(data_name, aggregates);
     plot_simple_data("number_of_alerts", lengths);
+    println!("rel perf {}: mean {}, stdev {}", data_name, rel_perfs.mean().unwrap(), rel_perfs.f64().unwrap().std(1).unwrap())
 }
 
 fn get_axis_variables(axes: &Axes, file_name: &str, system: System) -> Axes {
@@ -491,8 +510,8 @@ fn read_csv_to_series(dir_entry: &DirEntry) -> Series {
 }
 
 fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<Quartiles>) {
-    for (y_index, row) in aggregate_matrix.iter().enumerate() {
-        for (x_index, diagram) in row.results.iter().enumerate() {
+    for (_, row) in aggregate_matrix.iter().enumerate() {
+        for (_, diagram) in row.results.iter().enumerate() {
             let file_name = format!(
                 "figures/{data_name}/{}_{}.svg",
                 row.independent_variable, diagram.independent_variable
@@ -507,7 +526,7 @@ fn plot_aggregate_data(data_name: &str, aggregate_matrix: ResultMatrix<Quartiles
                 65
             };
             let mut chart = ChartBuilder::on(&root_drawing_area)
-                .margin(25)
+                .margin(35)
                 .x_label_area_size(35)
                 .y_label_area_size(positions)
                 .build_cartesian_2d(get_independent_range(diagram).log_scale(), dependent_range)
@@ -544,7 +563,7 @@ fn get_y_desc(data_name: &str) -> String {
         "alert_delays" => "Alert Delays (s)".to_owned(),
         "load_average" => "Load Average (tasks per minute)".to_owned(),
         "memory_usage" => "Memory Usage (bytes)".to_owned(),
-        "processing_time" => "Processing Time (s/100)".to_owned(),
+        "processing_time" => "Processing Time (s)".to_owned(),
         _ => data_name.to_owned(),
     }
 }
@@ -578,7 +597,7 @@ fn plot_simple_data(data_name: &str, aggregate_matrix: ResultMatrix<usize>) {
                 .set_left_and_bottom_label_area_size(20)
                 .build_cartesian_2d(
                     get_independent_range(diagram).log_scale(),
-                    (0f32..diagram.frames.iter().map(|d| d.data).max().unwrap_or(0) as f32),
+                    0f32..diagram.frames.iter().map(|d| d.data).max().unwrap_or(0) as f32,
                 )
                 .unwrap();
             chart
@@ -606,6 +625,7 @@ fn plot_simple_data(data_name: &str, aggregate_matrix: ResultMatrix<usize>) {
         }
     }
 }
+
 fn get_independent_range<T>(diagram: &ResultDiagram<T>) -> Range<i32> {
     let independent_values = diagram
         .frames
